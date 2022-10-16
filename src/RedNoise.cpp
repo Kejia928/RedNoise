@@ -1,16 +1,19 @@
 #include <CanvasTriangle.h>
 #include <DrawingWindow.h>
 #include <CanvasPoint.h>
+#include <ModelTriangle.h>
 #include <TextureMap.h>
 #include <Colour.h>
 #include <Utils.h>
 #include <fstream>
 #include <vector>
+#include <map>
 #include <glm/glm.hpp>
 
 
 #define WIDTH 320
 #define HEIGHT 240
+float depthBuffer[HEIGHT][WIDTH];
 
 // ---------------------- Week 1 ---------------------- //
 void draw(DrawingWindow &window) {
@@ -133,7 +136,6 @@ void triangleRasteriser(DrawingWindow &window, CanvasPoint v1, CanvasPoint v2, C
 }
 
 void drawFilledTriangle(DrawingWindow &window, CanvasTriangle triangle, const Colour& colour) {
-    drawStrokedTriangle(window, triangle, Colour(255, 255, 255));
     // sort point
     CanvasPoint topPoint;
     CanvasPoint bottomPoint;
@@ -295,14 +297,142 @@ void drawTextureTriangle(DrawingWindow &window, const TextureMap& textureMap, Ca
     textureTriangle(window, textureMap, triangle, bottomPoint, givenPoint, extraPoint);
 }
 
+// ---------------------- Week 4 ---------------------- //
+// Convert mtl colours to packed integer colours
+Colour mtlConverter(double r, double g, double b) {
+    Colour packedColour = Colour(int(r*255), int(g*255), int(b*255));
+    return packedColour;
+}
+
+// Read colour from mtl file
+std::map<std::string, Colour> mtlReader(const std::string& file) {
+    std::map<std::string, Colour> colours;
+    // Create a text string
+    std::string myText;
+    std::string name;
+    // Read from the text file
+    std::ifstream File(file);
+    // Use a while loop together with the getline() function to read the file line by line
+    while(getline(File, myText)) {
+        std::vector<std::string> text = split(myText, ' ');
+        if(text[0] == "newmtl") {
+            name = text[1];
+        } else if (text[0] == "Kd") {
+            colours[name] = mtlConverter(std::stod(text[1]), std::stod(text[2]), std::stod(text[3]));
+        }
+    }
+    // Close the file
+    File.close();
+    return colours;
+}
+
+// Read data from obj file
+std::vector<ModelTriangle> objReader(const std::string& objFile, const std::string& mtlFile, float scalingFactor) {
+    std::vector<glm::vec3> vertex;
+    std::vector<std::vector<std::string>> facets;
+    std::vector<ModelTriangle> modelTriangles;
+    // Create a text string, which is used to output the text objFile
+    std::string myText;
+    std::string colourName;
+    // Read from the text objFile
+    std::ifstream File(objFile);
+    // Use a while loop together with the getline() function to read the objFile line by line
+    while(getline(File, myText)) {
+        std::vector<std::string> text = split(myText, ' ');
+        // get colour
+        if(text[0] == "usemtl") {
+            colourName = text[1];
+        // get vertex coordinates
+        } else if(text[0] == "v") {
+            glm::vec3 v = glm::vec3(std::stod(text[1]), std::stod(text[2]), std::stod(text[3]));
+            vertex.push_back(v);
+        // get triangle facets
+        } else if(text[0] == "f") {
+            std::vector<std::string> f {text[1], text[2], text[3], colourName};
+            facets.push_back(f);
+        }
+    }
+    // Close the File
+    File.close();
+    // Get mtl file
+    std::map<std::string, Colour> colourMap = mtlReader(mtlFile);
+    // Create model triangle list
+    for(std::vector<std::string> i : facets) {
+        glm::vec3 v0 = vertex[std::stoi(i[0])-1];
+        glm::vec3 v1 = vertex[std::stoi(i[1])-1];
+        glm::vec3 v2 = vertex[std::stoi(i[2])-1];
+        Colour colour = colourMap[i[3]];
+        ModelTriangle triangle = ModelTriangle(v0*scalingFactor, v1*scalingFactor, v2*scalingFactor, colour);
+        modelTriangles.push_back(triangle);
+    }
+
+    return modelTriangles;
+}
+
+glm::vec3 cameraCoordinateSystemConverter(glm::vec3 cameraPosition, glm::vec3 vertexPosition) {
+    glm::vec3 converted = {vertexPosition.x - cameraPosition.x, vertexPosition.y - cameraPosition.y,  cameraPosition.z - vertexPosition.z};
+    return converted;
+}
+
+CanvasPoint getCanvasIntersectionPoint(glm::vec3 cameraPosition, glm::vec3 vertexPosition, float focalLength, float scalingFactor) {
+    CanvasPoint twoDPosition;
+    glm::vec3 convertedPosition = cameraCoordinateSystemConverter(cameraPosition, vertexPosition);
+    twoDPosition.x = focalLength * (convertedPosition.x / convertedPosition.z) * scalingFactor + (float(WIDTH)/2);
+    twoDPosition.y = focalLength * (convertedPosition.y / convertedPosition.z) * scalingFactor + (float(HEIGHT)/2);
+    return twoDPosition;
+}
+
+CanvasTriangle getCanvasTriangle(ModelTriangle modelTriangle, glm::vec3 cameraPosition, float focalLength, float scalingFactor) {
+    CanvasPoint v0 = getCanvasIntersectionPoint(cameraPosition, modelTriangle.vertices[0], focalLength, scalingFactor);
+    CanvasPoint v1 = getCanvasIntersectionPoint(cameraPosition, modelTriangle.vertices[1], focalLength, scalingFactor);
+    CanvasPoint v2 = getCanvasIntersectionPoint(cameraPosition, modelTriangle.vertices[2], focalLength, scalingFactor);
+    CanvasTriangle canvasTriangle = CanvasTriangle(v0, v1, v2);
+    return canvasTriangle;
+}
+
+void pointCloudRender(DrawingWindow &window, const std::vector<ModelTriangle>& modelTriangles, glm::vec3 cameraPosition, float focalLength, float scalingFactor, const Colour& colour) {
+    // Calculate colour
+    int red = colour.red;
+    int green = colour.green;
+    int blue = colour.blue;
+    uint32_t c = (255 << 24) + (red << 16) + (green << 8) + (blue);
+    // Draw point
+    for(const ModelTriangle& modelTriangle : modelTriangles) {
+        CanvasTriangle canvasTriangle = getCanvasTriangle(modelTriangle, cameraPosition, focalLength, scalingFactor);
+        window.setPixelColour(int(canvasTriangle.v0().x), int(canvasTriangle.v0().y), c);
+        window.setPixelColour(int(canvasTriangle.v1().x), int(canvasTriangle.v1().y), c);
+        window.setPixelColour(int(canvasTriangle.v2().x), int(canvasTriangle.v2().y), c);
+    }
+}
+
+void wireframeRender(DrawingWindow &window, const std::vector<ModelTriangle>& modelTriangles, glm::vec3 cameraPosition, float focalLength, float scalingFactor, const Colour& colour) {
+    // Draw triangle
+    for(const ModelTriangle& modelTriangle : modelTriangles) {
+        CanvasTriangle canvasTriangle = getCanvasTriangle(modelTriangle, cameraPosition, focalLength, scalingFactor);
+        drawStrokedTriangle(window, canvasTriangle, colour);
+    }
+}
+
+void rasterisedRender(DrawingWindow &window, const std::vector<ModelTriangle>& modelTriangles, glm::vec3 cameraPosition, float focalLength, float scalingFactor) {
+    // Rasterise triangle
+    for(const ModelTriangle& modelTriangle : modelTriangles) {
+        CanvasTriangle canvasTriangle = getCanvasTriangle(modelTriangle, cameraPosition, focalLength, scalingFactor);
+        drawFilledTriangle(window, canvasTriangle, modelTriangle.colour);
+    }
+}
+
 // ---------------------- Show in window ---------------------- //
 void handleEvent(SDL_Event event, DrawingWindow &window) {
 	if (event.type == SDL_KEYDOWN) {
-		if (event.key.keysym.sym == SDLK_LEFT) std::cout << "LEFT" << std::endl;
-		else if (event.key.keysym.sym == SDLK_RIGHT) std::cout << "RIGHT" << std::endl;
-		else if (event.key.keysym.sym == SDLK_UP) std::cout << "UP" << std::endl;
-		else if (event.key.keysym.sym == SDLK_DOWN) std::cout << "DOWN" << std::endl;
-        else if (event.key.keysym.sym == SDLK_u){
+		if (event.key.keysym.sym == SDLK_LEFT) {
+            std::cout << "LEFT" << std::endl;
+        } else if (event.key.keysym.sym == SDLK_RIGHT) {
+            std::cout << "RIGHT" << std::endl;
+        } else if (event.key.keysym.sym == SDLK_UP) {
+            std::cout << "UP" << std::endl;
+        } else if (event.key.keysym.sym == SDLK_DOWN) {
+            std::cout << "DOWN" << std::endl;
+        } else if (event.key.keysym.sym == SDLK_u) {
             CanvasPoint point1,point2,point3;
             CanvasTriangle triangle;
             point1 = CanvasPoint(float(rand()%window.width), float(rand()%window.height));
@@ -310,17 +440,16 @@ void handleEvent(SDL_Event event, DrawingWindow &window) {
             point3 = CanvasPoint(float(rand()%window.width), float(rand()%window.height));
             triangle = CanvasTriangle(point1, point2, point3);
             drawStrokedTriangle(window, triangle, Colour(rand()%256, rand()%256, rand()%256));
-        }
-        else if (event.key.keysym.sym == SDLK_f){
+        } else if (event.key.keysym.sym == SDLK_f) {
             CanvasPoint point1,point2,point3;
             CanvasTriangle triangle;
             point1 = CanvasPoint(float(rand()%window.width), float(rand()%window.height));
             point2 = CanvasPoint(float(rand()%window.width), float(rand()%window.height));
             point3 = CanvasPoint(float(rand()%window.width), float(rand()%window.height));
             triangle = CanvasTriangle(point1, point2, point3);
+            drawStrokedTriangle(window, triangle, Colour(255, 255, 255));
             drawFilledTriangle(window, triangle, Colour(rand()%256, rand()%256, rand()%256));
-        }
-        else if(event.key.keysym.sym == SDLK_o){
+        } else if(event.key.keysym.sym == SDLK_o) {
             CanvasPoint point1,point2,point3;
             point1 = CanvasPoint(160, 10);
             point2 = CanvasPoint(300, 230);
@@ -329,8 +458,24 @@ void handleEvent(SDL_Event event, DrawingWindow &window) {
             point2.texturePoint.x = 395; point2.texturePoint.y = 380;
             point3.texturePoint.x = 65; point3.texturePoint.y = 330;
             drawTextureTriangle(window, getTextureMap("texture.ppm"), CanvasTriangle(point1, point2, point3));
+        } else if(event.key.keysym.sym == SDLK_p) {
+            glm::vec3 cameraPosition (0.0, 0.0, 4.0);
+            float focalLength = 2.0;
+            std::vector<ModelTriangle> modelTriangles = objReader("cornell-box.obj", "cornell-box.mtl", 0.35);
+            pointCloudRender(window, modelTriangles, cameraPosition, focalLength, float(HEIGHT)*2/3, Colour(255, 255, 255));
+        } else if(event.key.keysym.sym == SDLK_w) {
+            glm::vec3 cameraPosition (0.0, 0.0, 4.0);
+            float focalLength = 2.0;
+            std::vector<ModelTriangle> modelTriangles = objReader("cornell-box.obj", "cornell-box.mtl", 0.35);
+            wireframeRender(window, modelTriangles, cameraPosition, focalLength, float(HEIGHT)*2/3, Colour(255, 255, 255));
+        } else if(event.key.keysym.sym == SDLK_r) {
+            glm::vec3 cameraPosition (0.0, 0.0, 4.0);
+            float focalLength = 2.0;
+            std::vector<ModelTriangle> modelTriangles = objReader("cornell-box.obj", "cornell-box.mtl", 0.35);
+            rasterisedRender(window, modelTriangles, cameraPosition, focalLength, float(HEIGHT)*2/3);
+        } else if (event.key.keysym.sym == SDLK_c) {
+            window.clearPixels();
         }
-        else if (event.key.keysym.sym == SDLK_c) window.clearPixels();
     } else if (event.type == SDL_MOUSEBUTTONDOWN) {
 		window.savePPM("output.ppm");
 		window.saveBMP("output.bmp");
@@ -338,6 +483,7 @@ void handleEvent(SDL_Event event, DrawingWindow &window) {
 }
 
 int main(int argc, char *argv[]) {
+    // week 1
      // Single Element Numerical Interpolation
 //     std::vector<float> result;
 //     result = interpolateSingleFloats(2.2, 8.5, 7);
@@ -350,6 +496,11 @@ int main(int argc, char *argv[]) {
 //     glm::vec3 to(4, 1, 9.8);
 //     result = interpolateThreeElementValues(from, to, 4);
 //     for(size_t i=0; i<result.size(); i++) std::cout << result[i].x << " " << result[i].y << " " << result[i].z << " " << std::endl;make
+
+    // week 4
+    // Print modelTriangle list
+//    std::vector<ModelTriangle> modelTriangles = objReader("cornell-box.obj", "cornell-box.mtl", 0.35);
+//    for(const ModelTriangle& t : modelTriangles) {std::cout << t << t.colour << std::endl;}
 
 	DrawingWindow window = DrawingWindow(WIDTH, HEIGHT, false);
 	SDL_Event event;
