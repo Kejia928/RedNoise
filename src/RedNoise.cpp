@@ -15,6 +15,12 @@
 #define HEIGHT 240
 float depthBuffer[HEIGHT][WIDTH];
 
+void clearDepthBuffer(){
+    for(int y = 0; y < HEIGHT; y++)
+        for(int x = 0; x < WIDTH; x++)
+            depthBuffer[y][x] = INT32_MIN;
+}
+
 // ---------------------- Week 1 ---------------------- //
 void draw(DrawingWindow &window) {
 	window.clearPixels();
@@ -24,7 +30,7 @@ void draw(DrawingWindow &window) {
 			float green = 0.0;
 			float blue = 0.0;
 			uint32_t colour = (255 << 24) + (int(red) << 16) + (int(green) << 8) + int(blue);
-			window.setPixelColour(x, y, colour);
+			window.setPixelColour(x, HEIGHT -y, colour);
 		}
 	}
 }
@@ -46,7 +52,7 @@ void greyscaleInterpolation(DrawingWindow &window) {
         float blue = interpolation[x];
         for (size_t y = 0; y < window.height; y++) {
             uint32_t colour = (255 << 24) + (int(red) << 16) + (int(green) << 8) + int(blue);
-            window.setPixelColour(x, y, colour);
+            window.setPixelColour(x, HEIGHT -y, colour);
         }
     }
 }
@@ -75,7 +81,7 @@ void twoDimensionalColourInterpolation(DrawingWindow &window) {
             float green = row[x].y;
             float blue = row[x].z;
             uint32_t colour = (255 << 24) + (int(red) << 16) + (int(green) << 8) + int(blue);
-            window.setPixelColour(x, y, colour);
+            window.setPixelColour(x, HEIGHT -y, colour);
         }
     }
 }
@@ -85,19 +91,26 @@ void drawLine(DrawingWindow &window, CanvasPoint from, CanvasPoint to, const Col
     // Calculate step size
     float xDiff = to.x - from.x;
     float yDiff = to.y - from.y;
+    float depthDiff = to.depth - from.depth;
     float numberOfSteps = fmax(abs(xDiff), abs(yDiff));
     float xStepSize = xDiff/numberOfSteps;
     float yStepSize = yDiff/numberOfSteps;
+    float depthStepSize = depthDiff/numberOfSteps;
+
     // Calculate colour
     int red = colour.red;
     int green = colour.green;
     int blue = colour.blue;
     uint32_t c = (255 << 24) + (red << 16) + (green << 8) + (blue);
     // Set colour for pixel
-    for (int i = 0.0; float(i) < numberOfSteps; i++) {
+    for (int i = 0.0; float(i) <= numberOfSteps; i++) {
         float x = from.x + (xStepSize * float(i));
         float y = from.y + (yStepSize * float(i));
-        window.setPixelColour(int(x), int(y), c);
+        float z = from.depth + (depthStepSize * float(i));
+        if(depthBuffer[int(y)][int(x)] <= 1/z) {
+            depthBuffer[int(y)][int(x)] = 1/z;
+            window.setPixelColour(int(x), HEIGHT - int(y), c);
+        }
     }
 }
 
@@ -115,10 +128,12 @@ int sign(float d){
 }
 
 void triangleRasteriser(DrawingWindow &window, CanvasPoint v1, CanvasPoint v2, CanvasPoint v3, const Colour& colour) {
-    float dy =abs(v2.y-v1.y);
+    float dy = abs(v2.y-v1.y);
     float x = v1.x;
     float y = v1.y;
+    float z1Diff = v2.depth - v1.depth;
     float x2 = v2.x;
+    float z2Diff = v2.depth - v1.depth;
     float x3 = v3.x;
     float y3 = v3.y;
     int s = sign(y - y3);
@@ -128,8 +143,13 @@ void triangleRasteriser(DrawingWindow &window, CanvasPoint v1, CanvasPoint v2, C
         float f = float(i) / dy;
         newV1.x = x + (x2 - x) * f; // Calculate the start point
         newV1.y -= float(s); // move y with 1 step each time
+        newV1.depth = v1.depth + z1Diff * f;
         newV2.x = x + (x3 - x) * f; // Calculate the end point
         newV2.y -= float(s); // move y with 1 step each time
+        newV2.depth = v1.depth + z2Diff * f;
+        // v1.depth = - f * (v2.depth - v1.depth)
+
+        // f = v1.depth/(v1.depth-v2.depth)
         drawLine(window, newV1, newV2, colour);
     }
 
@@ -172,13 +192,21 @@ void drawFilledTriangle(DrawingWindow &window, CanvasTriangle triangle, const Co
     // separate triangle
     double similarTriangleRadio = (bottomPoint.x - topPoint.x)/(bottomPoint.y - topPoint.y);
     float extraPointX;
+    float extraPointY;
+    float extraPointDepth;
     // when radio is negative, the extra point is behind on the topPoint (-); when it is positive, the extraPoint is in the front of topPoint (+)
     if(similarTriangleRadio >= 0) {
         extraPointX = float(topPoint.x + ((givenPoint.y - topPoint.y) * abs(similarTriangleRadio)));
     } else {
         extraPointX = float(topPoint.x - ((givenPoint.y - topPoint.y) * abs(similarTriangleRadio)));
     }
-    extraPoint = CanvasPoint(extraPointX, givenPoint.y);
+    extraPointY = givenPoint.y;
+    // calculate extraPoint depth
+    float numberOfSteps = bottomPoint.y - topPoint.y;
+    std::vector<float> depthInterpolation = interpolateSingleFloats(topPoint.depth, bottomPoint.depth, int(numberOfSteps));
+    float index = extraPointY - topPoint.y;
+    extraPointDepth = depthInterpolation[int(index)];
+    extraPoint = CanvasPoint(extraPointX, givenPoint.y, extraPointDepth);
 
     // test separate line
     // std::cout << topPoint << std::endl;
@@ -239,7 +267,7 @@ void textureTriangle(DrawingWindow &window, const TextureMap& textureMap, Canvas
             float pixel_x = newV1.x + float(j);
             float pixel_y = newV1.y;
             uint32_t colour = textureMapper(triangle, CanvasPoint(pixel_x, pixel_y), textureMap);
-            window.setPixelColour(int(pixel_x), int(pixel_y), colour);
+            window.setPixelColour(int(pixel_x), HEIGHT - int(pixel_y), colour);
         }
     }
 }
@@ -379,6 +407,7 @@ CanvasPoint getCanvasIntersectionPoint(glm::vec3 cameraPosition, glm::vec3 verte
     glm::vec3 convertedPosition = cameraCoordinateSystemConverter(cameraPosition, vertexPosition);
     twoDPosition.x = focalLength * (convertedPosition.x / convertedPosition.z) * scalingFactor + (float(WIDTH)/2);
     twoDPosition.y = focalLength * (convertedPosition.y / convertedPosition.z) * scalingFactor + (float(HEIGHT)/2);
+    twoDPosition.depth = abs(convertedPosition.z);
     return twoDPosition;
 }
 
@@ -399,9 +428,9 @@ void pointCloudRender(DrawingWindow &window, const std::vector<ModelTriangle>& m
     // Draw point
     for(const ModelTriangle& modelTriangle : modelTriangles) {
         CanvasTriangle canvasTriangle = getCanvasTriangle(modelTriangle, cameraPosition, focalLength, scalingFactor);
-        window.setPixelColour(int(canvasTriangle.v0().x), int(canvasTriangle.v0().y), c);
-        window.setPixelColour(int(canvasTriangle.v1().x), int(canvasTriangle.v1().y), c);
-        window.setPixelColour(int(canvasTriangle.v2().x), int(canvasTriangle.v2().y), c);
+        window.setPixelColour(int(canvasTriangle.v0().x), HEIGHT - int(canvasTriangle.v0().y), c);
+        window.setPixelColour(int(canvasTriangle.v1().x), HEIGHT - int(canvasTriangle.v1().y), c);
+        window.setPixelColour(int(canvasTriangle.v2().x), HEIGHT - int(canvasTriangle.v2().y), c);
     }
 }
 
@@ -473,7 +502,16 @@ void handleEvent(SDL_Event event, DrawingWindow &window) {
             float focalLength = 2.0;
             std::vector<ModelTriangle> modelTriangles = objReader("cornell-box.obj", "cornell-box.mtl", 0.35);
             rasterisedRender(window, modelTriangles, cameraPosition, focalLength, float(HEIGHT)*2/3);
+//            for(int i = 0; i < HEIGHT; i++) {
+//                for(int j=0; j < WIDTH; j++) {
+//                    if(depthBuffer[i][j] != 0) {
+//                        std::cout << depthBuffer[i][j] << std::endl;
+//                    }
+//                }
+//            }
         } else if (event.key.keysym.sym == SDLK_c) {
+            // reset the matrix
+            clearDepthBuffer();
             window.clearPixels();
         }
     } else if (event.type == SDL_MOUSEBUTTONDOWN) {
@@ -483,6 +521,7 @@ void handleEvent(SDL_Event event, DrawingWindow &window) {
 }
 
 int main(int argc, char *argv[]) {
+    clearDepthBuffer();
     // week 1
      // Single Element Numerical Interpolation
 //     std::vector<float> result;
@@ -499,7 +538,7 @@ int main(int argc, char *argv[]) {
 
     // week 4
     // Print modelTriangle list
-//    std::vector<ModelTriangle> modelTriangles = objReader("cornell-box.obj", "cornell-box.mtl", 0.35);
+//    std::vector<ModelTriangle> modelTriangles = objReader("cornell-box.obj", "cornell-box.mtl", 1);
 //    for(const ModelTriangle& t : modelTriangles) {std::cout << t << t.colour << std::endl;}
 
 	DrawingWindow window = DrawingWindow(WIDTH, HEIGHT, false);
