@@ -30,7 +30,7 @@ void draw(DrawingWindow &window) {
 			float green = 0.0;
 			float blue = 0.0;
 			uint32_t colour = (255 << 24) + (int(red) << 16) + (int(green) << 8) + int(blue);
-			window.setPixelColour(x, HEIGHT -y, colour);
+			window.setPixelColour(x, y, colour);
 		}
 	}
 }
@@ -52,7 +52,7 @@ void greyscaleInterpolation(DrawingWindow &window) {
         float blue = interpolation[x];
         for (size_t y = 0; y < window.height; y++) {
             uint32_t colour = (255 << 24) + (int(red) << 16) + (int(green) << 8) + int(blue);
-            window.setPixelColour(x, HEIGHT -y, colour);
+            window.setPixelColour(x, y, colour);
         }
     }
 }
@@ -81,7 +81,7 @@ void twoDimensionalColourInterpolation(DrawingWindow &window) {
             float green = row[x].y;
             float blue = row[x].z;
             uint32_t colour = (255 << 24) + (int(red) << 16) + (int(green) << 8) + int(blue);
-            window.setPixelColour(x, HEIGHT -y, colour);
+            window.setPixelColour(x, y, colour);
         }
     }
 }
@@ -107,9 +107,9 @@ void drawLine(DrawingWindow &window, CanvasPoint from, CanvasPoint to, const Col
         float x = from.x + (xStepSize * float(i));
         float y = from.y + (yStepSize * float(i));
         float z = from.depth + (depthStepSize * float(i));
-        if(depthBuffer[int(y)][int(x)] <= 1/z) {
-            depthBuffer[int(y)][int(x)] = 1/z;
-            window.setPixelColour(int(x), HEIGHT - int(y), c);
+        if(depthBuffer[int(round(y))][int(round(x))] <= z) {
+            depthBuffer[int(round(y))][int(round(x))] = z;
+            window.setPixelColour(int(round(x)), int(round(y)), c);
         }
     }
 }
@@ -133,7 +133,7 @@ void triangleRasteriser(DrawingWindow &window, CanvasPoint v1, CanvasPoint v2, C
     float y = v1.y;
     float z1Diff = v2.depth - v1.depth;
     float x2 = v2.x;
-    float z2Diff = v2.depth - v1.depth;
+    float z2Diff = v3.depth - v1.depth;
     float x3 = v3.x;
     float y3 = v3.y;
     int s = sign(y - y3);
@@ -202,19 +202,16 @@ void drawFilledTriangle(DrawingWindow &window, CanvasTriangle triangle, const Co
     }
     extraPointY = givenPoint.y;
     // calculate extraPoint depth
-    float numberOfSteps = bottomPoint.y - topPoint.y;
-    std::vector<float> depthInterpolation = interpolateSingleFloats(topPoint.depth, bottomPoint.depth, int(numberOfSteps));
-    float index = extraPointY - topPoint.y;
-    extraPointDepth = depthInterpolation[int(index)];
-    extraPoint = CanvasPoint(extraPointX, givenPoint.y, extraPointDepth);
+//    float numberOfSteps = bottomPoint.y - topPoint.y;
+//    std::vector<float> depthInterpolation = interpolateSingleFloats(topPoint.depth, bottomPoint.depth, int(numberOfSteps));
+//    float index = extraPointY - topPoint.y;
+//    extraPointDepth = depthInterpolation[round(index)];
+    float alpha = (-(extraPointX-triangle.v1().x)*(triangle.v2().y-triangle.v1().y)+(extraPointY-triangle.v1().y)*(triangle.v2().x-triangle.v1().x))/(-(triangle.v0().x-triangle.v1().x)*(triangle.v2().y-triangle.v1().y)+(triangle.v0().y-triangle.v1().y)*(triangle.v2().x-triangle.v1().x));
+    float beta = (-(extraPointX-triangle.v2().x)*(triangle.v0().y-triangle.v2().y)+(extraPointY-triangle.v2().y)*(triangle.v0().x-triangle.v2().x))/(-(triangle.v1().x-triangle.v2().x)*(triangle.v0().y-triangle.v2().y)+(triangle.v1().y-triangle.v2().y)*(triangle.v0().x-triangle.v2().x));
+    float gamma = 1 - alpha - beta;
+    extraPointDepth = alpha * triangle.v0().depth + beta * triangle.v1().depth + gamma * triangle.v2().depth;
 
-    // test separate line
-    // std::cout << topPoint << std::endl;
-    // std::cout << bottomPoint << extraPointX << std::endl;
-    // std::cout << givenPoint << extraPointX << std::endl;
-    // std::cout << "Extra Point X " << extraPointX << std::endl;
-    // window.setPixelColour(extraPoint.x, extraPoint.y, (255 << 24) + (255 << 16) + (0 << 8) + (0));
-    // drawLine(window, CanvasPoint(extraPoint.x, extraPoint.y), CanvasPoint(givenPoint.x, givenPoint.y), colour);
+    extraPoint = CanvasPoint(extraPointX, givenPoint.y, extraPointDepth);
 
     // filled the first triangle
     triangleRasteriser(window, topPoint, givenPoint, extraPoint, colour);
@@ -267,7 +264,7 @@ void textureTriangle(DrawingWindow &window, const TextureMap& textureMap, Canvas
             float pixel_x = newV1.x + float(j);
             float pixel_y = newV1.y;
             uint32_t colour = textureMapper(triangle, CanvasPoint(pixel_x, pixel_y), textureMap);
-            window.setPixelColour(int(pixel_x), HEIGHT - int(pixel_y), colour);
+            window.setPixelColour(int(pixel_x), int(pixel_y), colour);
         }
     }
 }
@@ -398,16 +395,16 @@ std::vector<ModelTriangle> objReader(const std::string& objFile, const std::stri
 }
 
 glm::vec3 cameraCoordinateSystemConverter(glm::vec3 cameraPosition, glm::vec3 vertexPosition) {
-    glm::vec3 converted = {vertexPosition.x - cameraPosition.x, vertexPosition.y - cameraPosition.y,  cameraPosition.z - vertexPosition.z};
+    glm::vec3 converted = {vertexPosition.x - cameraPosition.x, vertexPosition.y - cameraPosition.y,  vertexPosition.z - cameraPosition.z};
     return converted;
 }
 
 CanvasPoint getCanvasIntersectionPoint(glm::vec3 cameraPosition, glm::vec3 vertexPosition, float focalLength, float scalingFactor) {
     CanvasPoint twoDPosition;
     glm::vec3 convertedPosition = cameraCoordinateSystemConverter(cameraPosition, vertexPosition);
-    twoDPosition.x = focalLength * (convertedPosition.x / convertedPosition.z) * scalingFactor + (float(WIDTH)/2);
-    twoDPosition.y = focalLength * (convertedPosition.y / convertedPosition.z) * scalingFactor + (float(HEIGHT)/2);
-    twoDPosition.depth = abs(convertedPosition.z);
+    twoDPosition.x = round(focalLength * (convertedPosition.x / convertedPosition.z) * (-scalingFactor) + (float(WIDTH)/2));
+    twoDPosition.y = round(focalLength * (convertedPosition.y / convertedPosition.z) * scalingFactor + (float(HEIGHT)/2));
+    twoDPosition.depth = abs(1/convertedPosition.z);
     return twoDPosition;
 }
 
@@ -428,9 +425,9 @@ void pointCloudRender(DrawingWindow &window, const std::vector<ModelTriangle>& m
     // Draw point
     for(const ModelTriangle& modelTriangle : modelTriangles) {
         CanvasTriangle canvasTriangle = getCanvasTriangle(modelTriangle, cameraPosition, focalLength, scalingFactor);
-        window.setPixelColour(int(canvasTriangle.v0().x), HEIGHT - int(canvasTriangle.v0().y), c);
-        window.setPixelColour(int(canvasTriangle.v1().x), HEIGHT - int(canvasTriangle.v1().y), c);
-        window.setPixelColour(int(canvasTriangle.v2().x), HEIGHT - int(canvasTriangle.v2().y), c);
+        window.setPixelColour(int(round(canvasTriangle.v0().x)), int(round(canvasTriangle.v0().y)), c);
+        window.setPixelColour(int(round(canvasTriangle.v1().x)), int(round(canvasTriangle.v1().y)), c);
+        window.setPixelColour(int(round(canvasTriangle.v2().x)), int(round(canvasTriangle.v2().y)), c);
     }
 }
 
