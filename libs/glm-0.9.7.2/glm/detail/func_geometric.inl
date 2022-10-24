@@ -129,11 +129,11 @@ namespace detail
 		return detail::compute_dot<vecType, T, P>::call(x, y);
 	}
 
-	// cross
+	// crossProduct
 	template <typename T, precision P>
 	GLM_FUNC_QUALIFIER tvec3<T, P> cross(tvec3<T, P> const & x, tvec3<T, P> const & y)
 	{
-		GLM_STATIC_ASSERT(std::numeric_limits<T>::is_iec559, "'cross' only accept floating-point inputs");
+		GLM_STATIC_ASSERT(std::numeric_limits<T>::is_iec559, "'crossProduct' only accept floating-point inputs");
 
 		return tvec3<T, P>(
 			x.y * y.z - y.y * x.z,
