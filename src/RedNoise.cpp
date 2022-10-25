@@ -110,9 +110,11 @@ void drawLine(DrawingWindow &window, CanvasPoint from, CanvasPoint to, const Col
         float x = from.x + (xStepSize * float(i));
         float y = from.y + (yStepSize * float(i));
         float z = from.depth + (depthStepSize * float(i));
-        if(depthBuffer[int(round(y))][int(round(x))] <= z) {
-            depthBuffer[int(round(y))][int(round(x))] = z;
-            window.setPixelColour(int(round(x)), int(round(y)), c);
+        if(int(round(y)) <= HEIGHT || int(round(y)) >= 0) {
+            if(depthBuffer[int(round(y))][int(round(x))] <= z) {
+                depthBuffer[int(round(y))][int(round(x))] = z;
+                window.setPixelColour(int(round(x)), int(round(y)), c);
+            }
         }
     }
 }
@@ -451,7 +453,6 @@ void rasterisedRender(DrawingWindow &window, const std::vector<ModelTriangle>& m
     }
 }
 
-
 void drawRasterisedRender(DrawingWindow &window, const std::vector<ModelTriangle>& modelTriangles, glm::vec3 cameraPosition, glm::mat3 cameraOrientation, float focalLength, float scalingFactor) {
     // Rasterise triangle
     for(const ModelTriangle& modelTriangle : modelTriangles) {
@@ -460,11 +461,13 @@ void drawRasterisedRender(DrawingWindow &window, const std::vector<ModelTriangle
     }
 }
 
+// ---------------------- Week 5 ---------------------- //
 glm::vec3 moveCamera(SDL_Event event, glm::vec3 cameraPosition) {
     glm::vec3 newCameraPosition = cameraPosition;
     float theta = 0.1;
     float movement = 0.1;
     if (event.type == SDL_KEYDOWN) {
+        // Translate
         if (event.key.keysym.sym == SDLK_LEFT) {
             newCameraPosition.x += movement;
         } else if (event.key.keysym.sym == SDLK_RIGHT) {
@@ -477,18 +480,19 @@ glm::vec3 moveCamera(SDL_Event event, glm::vec3 cameraPosition) {
             newCameraPosition.z -= movement;
         } else if (event.key.keysym.sym == SDLK_b) {
             newCameraPosition.z += movement;
+        // Rotate
         } else if (event.key.keysym.sym == SDLK_d) {
             glm::mat3 rotation = glm::mat3(cos(theta), 0, -sin(theta), 0, 1, 0, sin(theta), 0, cos(theta));
-            newCameraPosition = cameraPosition * rotation;
+            newCameraPosition = rotation * cameraPosition;
         } else if (event.key.keysym.sym == SDLK_a) {
             glm::mat3 rotation = glm::mat3(cos(theta), 0, sin(theta), 0, 1, 0, -sin(theta), 0, cos(theta));
-            newCameraPosition = cameraPosition * rotation;
+            newCameraPosition = rotation * cameraPosition;
         } else if (event.key.keysym.sym == SDLK_w) {
             glm::mat3 rotation = glm::mat3(1, 0, 0, 0, cos(theta), -sin(theta), 0, sin(theta), cos(theta));
-            newCameraPosition = cameraPosition * rotation;
+            newCameraPosition = rotation * cameraPosition;
         } else if (event.key.keysym.sym == SDLK_s) {
             glm::mat3 rotation = glm::mat3(1, 0, 0, 0, cos(theta), sin(theta), 0, -sin(theta), cos(theta));
-            newCameraPosition = cameraPosition * rotation;
+            newCameraPosition = rotation * cameraPosition;
         }
     }
     return newCameraPosition;
@@ -499,16 +503,16 @@ glm::mat3 rotateCameraOrientation(SDL_Event event, glm::mat3 cameraOrientation) 
     glm::mat3 newCameraOrientation;
     if (event.key.keysym.sym == SDLK_d) {
         glm::mat3 rotation = glm::mat3(cos(theta), 0, -sin(theta), 0, 1, 0, sin(theta), 0, cos(theta));
-        newCameraOrientation = cameraOrientation * rotation;
+        newCameraOrientation = rotation * cameraOrientation;
     } else if (event.key.keysym.sym == SDLK_a) {
         glm::mat3 rotation = glm::mat3(cos(theta), 0, sin(theta), 0, 1, 0, -sin(theta), 0, cos(theta));
-        newCameraOrientation = cameraOrientation * rotation;
+        newCameraOrientation = rotation * cameraOrientation;
     } else if (event.key.keysym.sym == SDLK_w) {
         glm::mat3 rotation = glm::mat3(1, 0, 0, 0, cos(theta), -sin(theta), 0, sin(theta), cos(theta));
-        newCameraOrientation = cameraOrientation * rotation;
+        newCameraOrientation = rotation * cameraOrientation;
     } else if (event.key.keysym.sym == SDLK_s) {
         glm::mat3 rotation = glm::mat3(1, 0, 0, 0, cos(theta), sin(theta), 0, -sin(theta), cos(theta));
-        newCameraOrientation = cameraOrientation * rotation;
+        newCameraOrientation = rotation * cameraOrientation;
     }
     return newCameraOrientation;
 }
@@ -575,28 +579,28 @@ void handleEvent(SDL_Event event, DrawingWindow &window) {
             clearDepthBuffer();
             cameraPosition = moveCamera(event, cameraPosition);
             cameraOrientation = rotateCameraOrientation(event, cameraOrientation);
-            cameraOrientation = lookAt(cameraPosition);
+            //cameraOrientation = lookAt(cameraPosition);
         } else if (event.key.keysym.sym == SDLK_a) {
             std::cout << "Rotate about X-axis Anticlockwise" << std::endl;
             window.clearPixels();
             clearDepthBuffer();
             cameraPosition = moveCamera(event, cameraPosition);
             cameraOrientation = rotateCameraOrientation(event, cameraOrientation);
-            cameraOrientation = lookAt(cameraPosition);
+            //cameraOrientation = lookAt(cameraPosition);
         } else if (event.key.keysym.sym == SDLK_w) {
             std::cout << "Rotate about Y-axis Clockwise" << std::endl;
             window.clearPixels();
             clearDepthBuffer();
             cameraPosition = moveCamera(event, cameraPosition);
             cameraOrientation = rotateCameraOrientation(event, cameraOrientation);
-            cameraOrientation = lookAt(cameraPosition);
+            //cameraOrientation = lookAt(cameraPosition);
         } else if (event.key.keysym.sym == SDLK_s) {
             std::cout << "Rotate about Y-axis Anticlockwise" << std::endl;
             window.clearPixels();
             clearDepthBuffer();
             cameraPosition = moveCamera(event, cameraPosition);
             cameraOrientation = rotateCameraOrientation(event, cameraOrientation);
-            cameraOrientation = lookAt(cameraPosition);
+            //cameraOrientation = lookAt(cameraPosition);
         } else if (event.key.keysym.sym == SDLK_u) {
             CanvasPoint point1,point2,point3;
             CanvasTriangle triangle;
@@ -634,7 +638,11 @@ void handleEvent(SDL_Event event, DrawingWindow &window) {
             clearDepthBuffer();
             window.clearPixels();
         } else if(event.key.keysym.sym == SDLK_q) {
-            orbitYes = true;
+            if(orbitYes) {
+                orbitYes = false;
+            } else {
+                orbitYes = true;
+            }
         } else if(event.key.keysym.sym == SDLK_SPACE) {
             orbitYes = false;
         }
@@ -683,10 +691,11 @@ int main(int argc, char *argv[]) {
         if (orbitYes) {
             window.clearPixels();
             clearDepthBuffer();
-            cameraPosition = orbit(cameraPosition, 0.005);
             cameraOrientation = lookAt(cameraPosition);
-            drawRasterisedRender(window, modelTriangles, cameraPosition, cameraOrientation, focalLength, float(HEIGHT)*2/3);
+            cameraPosition = orbit(cameraPosition, 0.005);
+
         }
+        drawRasterisedRender(window, modelTriangles, cameraPosition, cameraOrientation, focalLength, float(HEIGHT)*2/3);
 		// Need to render the frame at the end, or nothing actually gets shown on the screen !
 		window.renderFrame();
 	}
