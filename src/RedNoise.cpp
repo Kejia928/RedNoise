@@ -741,7 +741,7 @@ void drawSphereWithFlatShading(DrawingWindow &window, const std::vector<ModelTri
             float pL = lightPower / (4 * PI * distance * distance);
             // Angle of Incidence Lighting
             // If the angle is less than 0, the PL will be zero, which means there do not have proximity light in that point
-            float incidenceAngle = std::max(0.0f, glm::dot(lightDirection, closestIntersection.intersectedTriangle.normal));
+            auto incidenceAngle = glm::clamp<float>(glm::dot(-lightDirection, closestIntersection.intersectedTriangle.normal), 0.0, 1.0);
             pL = pL * incidenceAngle;
 
             // Specular Lighting
