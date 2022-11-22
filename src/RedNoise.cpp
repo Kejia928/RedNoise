@@ -586,7 +586,7 @@ RayTriangleIntersection getClosestIntersection(glm::vec3 source, glm::vec3 rayDi
         glm::vec3 possibleSolution = glm::inverse(DEMatrix) * SPVector;
         float u = possibleSolution.y;
         float v = possibleSolution.z;
-        if(possibleSolution.x <= closestIntersection.distanceFromCamera && possibleSolution.x >= 0 && u >= 0 && u <= 1 && v >= 0 && v <= 1 && (u + v) <= 1) {
+        if(possibleSolution.x <= closestIntersection.distanceFromCamera && possibleSolution.x >= 0.000001 && u >= 0.000001 && u <= 1 && v >= 0.000001 && v <= 1 && (u + v) <= 1) {
             closestIntersection.distanceFromCamera = possibleSolution.x;
             glm::vec3 intersectionPoint = source + rayDirection * closestIntersection.distanceFromCamera;
             closestIntersection = RayTriangleIntersection(intersectionPoint, closestIntersection.distanceFromCamera, modelTriangles[i], i);
@@ -722,6 +722,24 @@ glm::vec3 moveLight(SDL_Event event, glm::vec3 lightPosition) {
     return newLightPosition;
 }
 
+Colour getReflectionColour(const std::vector<ModelTriangle>& modelTriangles, glm::vec3 lightPosition, RayTriangleIntersection reflectionIntersection, float ambient) {
+    Colour colour = reflectionIntersection.intersectedTriangle.colour;
+    glm::vec3 lightDirection = glm::normalize(reflectionIntersection.intersectionPoint - lightPosition);
+    RayTriangleIntersection lightIntersection = getClosestIntersection(lightPosition, lightDirection, modelTriangles);
+    // Draw
+    // If the ray intersection from camera does not same with the ray intersection from light,
+    // the area should be shadow, which means this area can not see the light.
+    if (reflectionIntersection.triangleIndex != lightIntersection.triangleIndex) {
+        int red = int(float(colour.red) * ambient);
+        int green = int(float(colour.green) * ambient);
+        int blue = int(float(colour.blue) * ambient);
+        return {red, green, blue};
+    } else {
+        return colour;
+    }
+
+}
+
 void rayTraceWithLighting(DrawingWindow &window, const std::vector<ModelTriangle>& modelTriangles, glm::vec3 cameraPosition, glm::mat3 cameraOrientation, glm::vec3 lightPosition, float focalLength, float scalingFactor, float lightPower, float ambient) {
     std::vector<glm::vec3> lightPositions = multiLightPosition(lightPosition);
     for(int y = 0; y < HEIGHT; y++) {
@@ -770,8 +788,8 @@ void rayTraceWithLighting(DrawingWindow &window, const std::vector<ModelTriangle
             // Mirror
             if(closestIntersection.intersectedTriangle.colour.name == "Yellow") {
                 glm::vec3 reflectionRay = glm::normalize(view - (2.0f * closestIntersection.intersectedTriangle.normal * glm::dot(view, closestIntersection.intersectedTriangle.normal)));
-                RayTriangleIntersection reflectionIntersection = getClosestIntersection(cameraPosition, reflectionRay, modelTriangles);
-                colour = reflectionIntersection.intersectedTriangle.colour;
+                RayTriangleIntersection reflectionIntersection = getClosestIntersection(closestIntersection.intersectionPoint, reflectionRay, modelTriangles);
+                colour = getReflectionColour(modelTriangles, lightPosition, reflectionIntersection, ambient);
             }
 
             // Using the brightness to multiply each RGB channel
@@ -779,12 +797,12 @@ void rayTraceWithLighting(DrawingWindow &window, const std::vector<ModelTriangle
             float red = std::min((float(colour.red) * point.brightness), 255.0f);
             float green = std::min((float(colour.green) * point.brightness), 255.0f);
             float blue = std::min((float(colour.blue) * point.brightness), 255.0f);
-//            if (closestIntersection.triangleIndex != lightIntersection.triangleIndex) {
-//                // Hard shadow
-//                red = red * ambient;
-//                green = green * ambient;
-//                blue = blue * ambient;
-//            }
+            if (closestIntersection.triangleIndex != lightIntersection.triangleIndex && closestIntersection.intersectedTriangle.colour.name != "Yellow") {
+                // Hard shadow
+                red = red * ambient;
+                green = green * ambient;
+                blue = blue * ambient;
+            }
 
 //            if (closestIntersection.triangleIndex != lightIntersection.triangleIndex) {
 //                float number = 0.0f;
