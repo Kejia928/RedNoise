@@ -6,14 +6,15 @@
 #include <Colour.h>
 #include <Utils.h>
 #include <fstream>
+#include <utility>
 #include <vector>
 #include <map>
 #include <glm/glm.hpp>
 #include <RayTriangleIntersection.h>
 
 
-#define WIDTH 960
-#define HEIGHT 720
+#define WIDTH 320
+#define HEIGHT 240
 #define PI 3.1415926f
 
 float depthBuffer[HEIGHT][WIDTH];
@@ -229,7 +230,6 @@ void drawFilledTriangle(DrawingWindow &window, CanvasTriangle triangle, const Co
 // Read texture map from image file
 TextureMap getTextureMap(const std::string& image) {
     TextureMap textureMap = TextureMap(image);
-    std::cout << "width " << textureMap.width << " height " << textureMap.height << std::endl;
     return textureMap;
 }
 
@@ -244,6 +244,15 @@ uint32_t textureMapper(CanvasTriangle triangle, CanvasPoint point, TextureMap te
     // Locate the texture point position in texture map pixel list
     int index = int(texturePoint.y) * int(textureMap.width) + int(texturePoint.x);
     std::cout << "Index of texture is:" << index << " corresponds to texture point x:" << texturePoint.x << " and y: " << texturePoint.y << "\n" << std::endl;
+    uint32_t colour = textureMap.pixels[index - 1];
+    return colour;
+}
+
+uint32_t modelTextureMapper(float alpha, float beta, float gamma, ModelTriangle triangle, TextureMap textureMap){
+    // Get texture point
+    CanvasPoint texturePoint((alpha * triangle.texturePoints[0].x * float(textureMap.width) + beta * triangle.texturePoints[1].x * float(textureMap.width) + gamma * triangle.texturePoints[2].x * float(textureMap.width)), (alpha * triangle.texturePoints[0].y * float(textureMap.height) + beta * triangle.texturePoints[1].y * float(textureMap.height) + gamma * triangle.texturePoints[2].y * float(textureMap.height)));
+    // Locate the texture point position in texture map pixel list
+    int index = int(texturePoint.y) * int(textureMap.width) + int(texturePoint.x);
     uint32_t colour = textureMap.pixels[index - 1];
     return colour;
 }
@@ -363,6 +372,7 @@ std::vector<ModelTriangle> objReader(const std::string& objFile, const std::stri
     std::vector<glm::vec3> vertex;
     std::vector<std::vector<std::string>> facets;
     std::vector<ModelTriangle> modelTriangles;
+    std::vector<TexturePoint> textureVertex;
     // Create a text string, which is used to output the text objFile
     std::string myText;
     std::string colourName;
@@ -379,9 +389,26 @@ std::vector<ModelTriangle> objReader(const std::string& objFile, const std::stri
             glm::vec3 v = glm::vec3(std::stod(text[1]), std::stod(text[2]), std::stod(text[3]));
             vertex.push_back(v);
         // get triangle facets
+        } else if(text[0] == "vt"){
+            std::cout << text[3] <<std::endl;
+            TexturePoint vt = TexturePoint(std::stof(text[1]), std::stof(text[2]));
+            textureVertex.push_back(vt);
         } else if(text[0] == "f") {
-            std::vector<std::string> f {text[1], text[2], text[3], colourName};
-            facets.push_back(f);
+            if(colourName == "Cobbles") {
+                std::vector<std::string> faceVertex;
+                std::vector<std::string> faceTextureVertex;
+                for(int i = 1; i < 4; i++) {
+                    std::vector<std::string> t = split(text[i], '/');
+                    faceVertex.push_back(t[0]);
+                    faceTextureVertex.push_back(t[1]);
+                }
+                std::vector<std::string> f {faceVertex[0], faceVertex[1], faceVertex[2], colourName, faceTextureVertex[0], faceTextureVertex[1], faceTextureVertex[2]};
+                facets.push_back(f);
+            } else {
+                std::vector<std::string> f {text[1], text[2], text[3], colourName};
+                facets.push_back(f);
+            }
+
         }
     }
     // Close the File
@@ -402,11 +429,16 @@ std::vector<ModelTriangle> objReader(const std::string& objFile, const std::stri
         if(mtlFile != "null") {
             triangle.colour = colourMap[i[3]];
             triangle.colour.name = i[3];
+            if(triangle.colour.name == "Cobbles") {
+                TexturePoint vt0 = textureVertex[std::stoi(i[4])-1];
+                TexturePoint vt1 = textureVertex[std::stoi(i[5])-1];
+                TexturePoint vt2 = textureVertex[std::stoi(i[6])-1];
+                triangle.texturePoints = {vt0, vt1, vt2};
+            }
         }
 
         // normal
         triangle.normal = glm::normalize(glm::cross((triangle.vertices[2] - triangle.vertices[0]), (triangle.vertices[1] - triangle.vertices[0])));
-        std::cout << triangle.colour.name << std::endl;
         modelTriangles.push_back(triangle);
     }
 
@@ -552,9 +584,9 @@ std::vector<glm::vec3> multiLightPosition(glm::vec3 center) {
             lightPositions.emplace_back(center.x+i, center.y, center.z+j);
             // std::cout << center.x+i << " " << center.y << " " << center.z+j << std::endl;
             // std::cout << i << " " << j << std::endl;
-            j = j + 0.1f;
+            j = j + 0.02f;
         }
-        i = i + 0.1f;
+        i = i + 0.02f;
     }
     return lightPositions;
 }
@@ -635,6 +667,7 @@ void rayTraceWithHardShadow(DrawingWindow &window, const std::vector<ModelTriang
             // Shoot a ray from lightPosition to intersected point
             glm::vec3 lightDirection = glm::normalize(closestIntersection.intersectionPoint - lightPosition);
             RayTriangleIntersection lightIntersection = getClosestIntersection(lightPosition, lightDirection, modelTriangles);
+            //std::cout << lightIntersection.intersectionPoint.x << " " << lightIntersection.intersectionPoint.y << " " << lightIntersection.intersectionPoint.z << std::endl;
             // Draw
             // If the ray intersection from camera does not same with the ray intersection from light,
             // the area should be shadow, which means this area can not see the light.
@@ -722,14 +755,36 @@ glm::vec3 moveLight(SDL_Event event, glm::vec3 lightPosition) {
     return newLightPosition;
 }
 
-Colour getReflectionColour(const std::vector<ModelTriangle>& modelTriangles, glm::vec3 lightPosition, RayTriangleIntersection reflectionIntersection, float ambient) {
+Colour getReflectionColour(const std::vector<ModelTriangle>& modelTriangles, glm::vec3 lightPosition, const RayTriangleIntersection& intersection, glm::vec3 input, float ambient, TextureMap textureMap) {
+    glm::vec3 reflectionRay = glm::normalize(input - (2.0f * intersection.intersectedTriangle.normal * glm::dot(input, intersection.intersectedTriangle.normal)));
+    RayTriangleIntersection reflectionIntersection = getClosestIntersection(intersection.intersectionPoint, reflectionRay, modelTriangles);
     Colour colour = reflectionIntersection.intersectedTriangle.colour;
     glm::vec3 lightDirection = glm::normalize(reflectionIntersection.intersectionPoint - lightPosition);
     RayTriangleIntersection lightIntersection = getClosestIntersection(lightPosition, lightDirection, modelTriangles);
     // Draw
     // If the ray intersection from camera does not same with the ray intersection from light,
     // the area should be shadow, which means this area can not see the light.
-    if (reflectionIntersection.triangleIndex != lightIntersection.triangleIndex) {
+    if(reflectionIntersection.intersectedTriangle.colour.name == "Cobbles") {
+        glm::vec3 v0 = reflectionIntersection.intersectedTriangle.vertices[0];
+        glm::vec3 v1 = reflectionIntersection.intersectedTriangle.vertices[1];
+        glm::vec3 v2 = reflectionIntersection.intersectedTriangle.vertices[2];
+        glm::vec3 p = reflectionIntersection.intersectionPoint;
+        float alpha = (-(p.x-v1.x)*(v2.y-v1.y)+(p.y-v1.y)*(v2.x-v1.x))/(-(v0.x-v1.x)*(v2.y-v1.y)+(v0.y-v1.y)*(v2.x-v1.x));
+        float beta = (-(p.x-v2.x)*(v0.y-v2.y)+(p.y-v2.y)*(v0.x-v2.x))/(-(v1.x-v2.x)*(v0.y-v2.y)+(v1.y-v2.y)*(v0.x-v2.x));
+        float gamma = 1 - alpha - beta;
+        uint32_t c = modelTextureMapper(alpha, beta, gamma, reflectionIntersection.intersectedTriangle, textureMap);
+        int blue = int((c) & 0xff);
+        int green = int((c >> 8) & 0xff);
+        int red = int((c >> 16) & 0xff);
+        if(reflectionIntersection.triangleIndex != lightIntersection.triangleIndex) {
+            red = int(float(red) * ambient);
+            green = int(float(green) * ambient);
+            blue = int(float(blue) * ambient);
+            return {red, green, blue};
+        } else {
+            return {red, green, blue};
+        }
+    } else if (reflectionIntersection.triangleIndex != lightIntersection.triangleIndex) {
         int red = int(float(colour.red) * ambient);
         int green = int(float(colour.green) * ambient);
         int blue = int(float(colour.blue) * ambient);
@@ -737,10 +792,38 @@ Colour getReflectionColour(const std::vector<ModelTriangle>& modelTriangles, glm
     } else {
         return colour;
     }
-
 }
 
-void rayTraceWithLighting(DrawingWindow &window, const std::vector<ModelTriangle>& modelTriangles, glm::vec3 cameraPosition, glm::mat3 cameraOrientation, glm::vec3 lightPosition, float focalLength, float scalingFactor, float lightPower, float ambient) {
+Colour getRefractionColour(const std::vector<ModelTriangle>& modelTriangles, glm::vec3 lightPosition, const RayTriangleIntersection& intersection, glm::vec3 input, float ambient, int index) {
+    if(index > 5) {return intersection.intersectedTriangle.colour;}
+    float air = 1.0f;
+    float glass = 1.3f;
+    glm::vec3 incidenceRay = input;
+    glm::vec3 refractionRay = glm::vec3(0, 0, 0);
+    glm::vec3 normal = intersection.intersectedTriangle.normal;
+    auto incidenceAngle = glm::clamp<float>(glm::dot(incidenceRay, normal), -1.0f, 1.0f);
+    float outAngle = -incidenceAngle;
+    float eta = 0.0f;
+    float k = 0.0f;
+    if(outAngle < 0) {
+        eta = glass / air;
+    } else {
+        eta = air / glass;
+    }
+    normal = -normal;
+    k = 1 - eta * eta * (1 - incidenceAngle * incidenceAngle);
+    if (k < 0){
+        Colour colour = Colour(255, 255, 255);
+        return colour;
+    }
+
+    refractionRay = incidenceRay*eta + normal * (eta*incidenceAngle - sqrt(k));
+    RayTriangleIntersection refractionIntersection = getClosestIntersection(intersection.intersectionPoint, refractionRay, modelTriangles);
+    Colour colour = getRefractionColour(modelTriangles, lightPosition, refractionIntersection, refractionRay, ambient, index+1);
+    return colour;
+}
+
+void rayTraceWithLighting(DrawingWindow &window, const std::vector<ModelTriangle>& modelTriangles, glm::vec3 cameraPosition, glm::mat3 cameraOrientation, glm::vec3 lightPosition, float focalLength, float scalingFactor, float lightPower, float ambient, TextureMap textureMap) {
     std::vector<glm::vec3> lightPositions = multiLightPosition(lightPosition);
     for(int y = 0; y < HEIGHT; y++) {
         for(int x = 0; x < WIDTH; x++) {
@@ -787,9 +870,23 @@ void rayTraceWithLighting(DrawingWindow &window, const std::vector<ModelTriangle
 
             // Mirror
             if(closestIntersection.intersectedTriangle.colour.name == "Yellow") {
-                glm::vec3 reflectionRay = glm::normalize(view - (2.0f * closestIntersection.intersectedTriangle.normal * glm::dot(view, closestIntersection.intersectedTriangle.normal)));
-                RayTriangleIntersection reflectionIntersection = getClosestIntersection(closestIntersection.intersectionPoint, reflectionRay, modelTriangles);
-                colour = getReflectionColour(modelTriangles, lightPosition, reflectionIntersection, ambient);
+                colour = getReflectionColour(modelTriangles, lightPosition, closestIntersection, view, ambient, textureMap);
+            } else if(closestIntersection.intersectedTriangle.colour.name == "Blue") {
+
+                colour = getRefractionColour(modelTriangles, lightPosition, closestIntersection, view, ambient, 1);
+
+            } else if(closestIntersection.intersectedTriangle.colour.name == "Cobbles") {
+                glm::vec3 v0 = closestIntersection.intersectedTriangle.vertices[0];
+                glm::vec3 v1 = closestIntersection.intersectedTriangle.vertices[1];
+                glm::vec3 v2 = closestIntersection.intersectedTriangle.vertices[2];
+                glm::vec3 p = closestIntersection.intersectionPoint;
+                float alpha = (-(p.x-v1.x)*(v2.y-v1.y)+(p.y-v1.y)*(v2.x-v1.x))/(-(v0.x-v1.x)*(v2.y-v1.y)+(v0.y-v1.y)*(v2.x-v1.x));
+                float beta = (-(p.x-v2.x)*(v0.y-v2.y)+(p.y-v2.y)*(v0.x-v2.x))/(-(v1.x-v2.x)*(v0.y-v2.y)+(v1.y-v2.y)*(v0.x-v2.x));
+                float gamma = 1 - alpha - beta;
+                uint32_t c = modelTextureMapper(alpha, beta, gamma, closestIntersection.intersectedTriangle, textureMap);
+                colour.blue = int((c) & 0xff);
+                colour.green = int((c >> 8) & 0xff);
+                colour.red = int((c >> 16) & 0xff);
             }
 
             // Using the brightness to multiply each RGB channel
@@ -1299,7 +1396,8 @@ bool rasterisedRenderYes = false;
 int scene = 0;
 
 // ---------------------- Box Model ---------------------- //
-std::vector<ModelTriangle> modelTriangles = objReader("cornell-box.obj", "cornell-box.mtl", 0.35);
+std::vector<ModelTriangle> modelTriangles = objReader("textured-cornell-box.obj", "textured-cornell-box.mtl", 0.35);
+TextureMap textureMap = getTextureMap("texture.ppm");
 
 // ---------------------- Sphere Model ---------------------- //
 std::vector<ModelTriangle> sphereModel = objReader("sphere.obj", "null", 0.35);
@@ -1313,7 +1411,7 @@ void handleEvent(SDL_Event event, DrawingWindow &window) {
             clearDepthBuffer();
             cameraPosition = moveCamera(event, cameraPosition);
             if (scene == 3){
-                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,150, lightPower, ambient);
+                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,50, lightPower, ambient, textureMap);
             } else if (scene == 2){
                 rayTraceWithHardShadow(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50);
             } else if (scene == 4){
@@ -1335,7 +1433,7 @@ void handleEvent(SDL_Event event, DrawingWindow &window) {
             clearDepthBuffer();
             cameraPosition = moveCamera(event, cameraPosition);
             if (scene == 3){
-                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,150, lightPower, ambient);
+                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,50, lightPower, ambient, textureMap);
             } else if (scene == 2){
                 rayTraceWithHardShadow(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50);
             } else if (scene == 4){
@@ -1357,7 +1455,7 @@ void handleEvent(SDL_Event event, DrawingWindow &window) {
             clearDepthBuffer();
             cameraPosition = moveCamera(event, cameraPosition);
             if (scene == 3){
-                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,150, lightPower, ambient);
+                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,50, lightPower, ambient, textureMap);
             } else if (scene == 2){
                 rayTraceWithHardShadow(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50);
             } else if (scene == 4){
@@ -1379,7 +1477,7 @@ void handleEvent(SDL_Event event, DrawingWindow &window) {
             clearDepthBuffer();
             cameraPosition = moveCamera(event, cameraPosition);
             if (scene == 3){
-                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,150, lightPower, ambient);
+                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,50, lightPower, ambient, textureMap);
             } else if (scene == 2){
                 rayTraceWithHardShadow(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50);
             } else if (scene == 4){
@@ -1401,7 +1499,7 @@ void handleEvent(SDL_Event event, DrawingWindow &window) {
             clearDepthBuffer();
             cameraPosition = moveCamera(event, cameraPosition);
             if (scene == 3){
-                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,150, lightPower, ambient);
+                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,50, lightPower, ambient, textureMap);
             } else if (scene == 2){
                 rayTraceWithHardShadow(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50);
             } else if (scene == 4){
@@ -1423,7 +1521,7 @@ void handleEvent(SDL_Event event, DrawingWindow &window) {
             clearDepthBuffer();
             cameraPosition = moveCamera(event, cameraPosition);
             if (scene == 3){
-                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,150, lightPower, ambient);
+                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,50, lightPower, ambient, textureMap);
             } else if (scene == 2){
                 rayTraceWithHardShadow(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50);
             } else if (scene == 4){
@@ -1446,7 +1544,7 @@ void handleEvent(SDL_Event event, DrawingWindow &window) {
             cameraPosition = moveCamera(event, cameraPosition);
             cameraOrientation = rotateCameraOrientation(event, cameraOrientation);
             if (scene == 3){
-                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,150, lightPower, ambient);
+                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,50, lightPower, ambient, textureMap);
             } else if (scene == 2){
                 rayTraceWithHardShadow(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50);
             } else if (scene == 4){
@@ -1469,7 +1567,7 @@ void handleEvent(SDL_Event event, DrawingWindow &window) {
             cameraPosition = moveCamera(event, cameraPosition);
             cameraOrientation = rotateCameraOrientation(event, cameraOrientation);
             if (scene == 3){
-                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,150, lightPower, ambient);
+                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,50, lightPower, ambient, textureMap);
             } else if (scene == 2){
                 rayTraceWithHardShadow(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50);
             } else if (scene == 4){
@@ -1492,7 +1590,7 @@ void handleEvent(SDL_Event event, DrawingWindow &window) {
             cameraPosition = moveCamera(event, cameraPosition);
             cameraOrientation = rotateCameraOrientation(event, cameraOrientation);
             if (scene == 3){
-                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,150, lightPower, ambient);
+                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,50, lightPower, ambient, textureMap);
             } else if (scene == 2){
                 rayTraceWithHardShadow(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50);
             } else if (scene == 4){
@@ -1515,7 +1613,7 @@ void handleEvent(SDL_Event event, DrawingWindow &window) {
             cameraPosition = moveCamera(event, cameraPosition);
             cameraOrientation = rotateCameraOrientation(event, cameraOrientation);
             if (scene == 3){
-                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,150, lightPower, ambient);
+                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,50, lightPower, ambient, textureMap);
             } else if (scene == 2){
                 rayTraceWithHardShadow(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50);
             } else if (scene == 4){
@@ -1541,12 +1639,12 @@ void handleEvent(SDL_Event event, DrawingWindow &window) {
             window.clearPixels();
             scene = 2;
             rayTraceWithSoftShadow(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50);
-            // rayTraceWithHardShadow(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50);
+            //rayTraceWithHardShadow(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50);
         } else if(event.key.keysym.sym == SDLK_3) {
             clearDepthBuffer();
             window.clearPixels();
             scene = 3;
-            rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 150, lightPower, ambient);
+            rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50, lightPower, ambient, textureMap);
         } else if(event.key.keysym.sym == SDLK_4) {
             clearDepthBuffer();
             window.clearPixels();
@@ -1605,7 +1703,7 @@ void handleEvent(SDL_Event event, DrawingWindow &window) {
             window.clearPixels();
             lightPosition = moveLight(event, lightPosition);
             if (scene == 3){
-                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,150, lightPower, ambient);
+                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,50, lightPower, ambient, textureMap);
             } else if (scene == 2){
                 rayTraceWithHardShadow(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50);
             } else if (scene == 4){
@@ -1624,7 +1722,7 @@ void handleEvent(SDL_Event event, DrawingWindow &window) {
             window.clearPixels();
             lightPosition = moveLight(event, lightPosition);
             if (scene == 3){
-                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,150, lightPower, ambient);
+                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,50, lightPower, ambient, textureMap);
             } else if (scene == 2){
                 rayTraceWithHardShadow(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50);
             } else if (scene == 4){
@@ -1643,7 +1741,7 @@ void handleEvent(SDL_Event event, DrawingWindow &window) {
             window.clearPixels();
             lightPosition = moveLight(event, lightPosition);
             if (scene == 3){
-                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,150, lightPower, ambient);
+                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,50, lightPower, ambient, textureMap);
             } else if (scene == 2){
                 rayTraceWithHardShadow(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50);
             } else if (scene == 4){
@@ -1662,7 +1760,7 @@ void handleEvent(SDL_Event event, DrawingWindow &window) {
             window.clearPixels();
             lightPosition = moveLight(event, lightPosition);
             if (scene == 3){
-                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,150, lightPower, ambient);
+                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,50, lightPower, ambient, textureMap);
             } else if (scene == 2){
                 rayTraceWithHardShadow(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50);
             } else if (scene == 4){
@@ -1681,7 +1779,7 @@ void handleEvent(SDL_Event event, DrawingWindow &window) {
             window.clearPixels();
             lightPosition = moveLight(event, lightPosition);
             if (scene == 3){
-                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,150, lightPower, ambient);
+                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,50, lightPower, ambient, textureMap);
             } else if (scene == 2){
                 rayTraceWithHardShadow(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50);
             } else if (scene == 4){
@@ -1700,7 +1798,7 @@ void handleEvent(SDL_Event event, DrawingWindow &window) {
             window.clearPixels();
             lightPosition = moveLight(event, lightPosition);
             if (scene == 3){
-                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,150, lightPower, ambient);
+                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,50, lightPower, ambient, textureMap);
             } else if (scene == 2){
                 rayTraceWithHardShadow(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50);
             } else if (scene == 4){
@@ -1719,7 +1817,7 @@ void handleEvent(SDL_Event event, DrawingWindow &window) {
             window.clearPixels();
             lightPower = lightPower + 1.0f;
             if (scene == 3){
-                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,150, lightPower, ambient);
+                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,50, lightPower, ambient, textureMap);
             } else if (scene == 2){
                 rayTraceWithHardShadow(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50);
             } else if (scene == 4){
@@ -1738,7 +1836,7 @@ void handleEvent(SDL_Event event, DrawingWindow &window) {
             window.clearPixels();
             lightPower = lightPower - 1.0f;
             if (scene == 3){
-                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,150, lightPower, ambient);
+                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,50, lightPower, ambient, textureMap);
             } else if (scene == 2){
                 rayTraceWithHardShadow(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50);
             } else if (scene == 4){
@@ -1757,7 +1855,7 @@ void handleEvent(SDL_Event event, DrawingWindow &window) {
             window.clearPixels();
             ambient = ambient + 0.1f;
             if (scene == 3){
-                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,150, lightPower, ambient);
+                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,50, lightPower, ambient, textureMap);
             } else if (scene == 2){
                 rayTraceWithHardShadow(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50);
             } else if (scene == 4){
@@ -1776,7 +1874,7 @@ void handleEvent(SDL_Event event, DrawingWindow &window) {
             window.clearPixels();
             ambient = ambient - 0.1f;
             if (scene == 3){
-                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,150, lightPower, ambient);
+                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,50, lightPower, ambient, textureMap);
             } else if (scene == 2){
                 rayTraceWithHardShadow(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50);
             } else if (scene == 4){
@@ -1815,7 +1913,7 @@ void handleEvent(SDL_Event event, DrawingWindow &window) {
             point1.texturePoint.x = 195; point1.texturePoint.y = 5;
             point2.texturePoint.x = 395; point2.texturePoint.y = 380;
             point3.texturePoint.x = 65; point3.texturePoint.y = 330;
-            drawTextureTriangle(window, getTextureMap("texture.ppm"), CanvasTriangle(point1, point2, point3));
+            drawTextureTriangle(window, textureMap, CanvasTriangle(point1, point2, point3));
         } else if(event.key.keysym.sym == SDLK_p) {
             pointCloudRender(window, modelTriangles, cameraPosition, cameraOrientation, focalLength, float(HEIGHT)*2/3, Colour(255, 255, 255));
         } else if(event.key.keysym.sym == SDLK_g) {
