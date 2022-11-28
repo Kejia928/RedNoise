@@ -16,6 +16,14 @@
 #define HEIGHT 240
 #define PI 3.1415926f
 
+enum shading {
+    FLAT, GOURAND, PHONG
+};
+
+enum shadow {
+    SOFT, HARD, Phong
+};
+
 float depthBuffer[HEIGHT][WIDTH];
 
 void clearDepthBuffer(){
@@ -583,9 +591,9 @@ std::vector<glm::vec3> multiLightPosition(glm::vec3 center) {
             lightPositions.emplace_back(center.x+i, center.y, center.z+j);
             // std::cout << center.x+i << " " << center.y << " " << center.z+j << std::endl;
             // std::cout << i << " " << j << std::endl;
-            j = j + 0.02f;
+            j = j + 0.01f;
         }
-        i = i + 0.02f;
+        i = i + 0.01f;
     }
     return lightPositions;
 }
@@ -753,50 +761,20 @@ glm::vec3 moveLight(SDL_Event event, glm::vec3 lightPosition) {
     }
     return newLightPosition;
 }
-Colour getRefractionColour(const std::vector<ModelTriangle>& modelTriangles, glm::vec3 lightPosition, const RayTriangleIntersection& intersection, glm::vec3 input, float ambient, int index, TextureMap textureMap);
 
-Colour getReflectionColour(const std::vector<ModelTriangle>& modelTriangles, glm::vec3 lightPosition, const RayTriangleIntersection& intersection, glm::vec3 input, float ambient, TextureMap textureMap, int index) {
-    if(index == 5) {
-        return {255, 255, 255};
-    }
-    glm::vec3 reflectionRay = glm::normalize(input - (2.0f * intersection.intersectedTriangle.normal * glm::dot(input, intersection.intersectedTriangle.normal)));
-    RayTriangleIntersection reflectionIntersection = getClosestIntersection(intersection.intersectionPoint, reflectionRay, modelTriangles);
-    Colour colour = reflectionIntersection.intersectedTriangle.colour;
-    glm::vec3 lightDirection = glm::normalize(reflectionIntersection.intersectionPoint - lightPosition);
-    RayTriangleIntersection lightIntersection = getClosestIntersection(lightPosition, lightDirection, modelTriangles);
-    // Draw
-    // If the ray intersection from camera does not same with the ray intersection from light,
-    // the area should be shadow, which means this area can not see the light.
-    if(reflectionIntersection.intersectedTriangle.colour.name == "Cobbles") {
-        glm::vec3 v0 = reflectionIntersection.intersectedTriangle.vertices[0];
-        glm::vec3 v1 = reflectionIntersection.intersectedTriangle.vertices[1];
-        glm::vec3 v2 = reflectionIntersection.intersectedTriangle.vertices[2];
-        glm::vec3 p = reflectionIntersection.intersectionPoint;
-        float alpha = ((-(p.x-v1.x)*(v2.y-v1.y)+(p.y-v1.y)*(v2.x-v1.x))/(-(v0.x-v1.x)*(v2.y-v1.y)+(v0.y-v1.y)*(v2.x-v1.x)))/abs(v0.z);
-        float beta = ((-(p.x-v2.x)*(v0.y-v2.y)+(p.y-v2.y)*(v0.x-v2.x))/(-(v1.x-v2.x)*(v0.y-v2.y)+(v1.y-v2.y)*(v0.x-v2.x)))/abs(v1.z);
-        float gamma = (1 - alpha - beta)/abs(v2.z);
-        uint32_t c = modelTextureMapper(alpha, beta, gamma, reflectionIntersection.intersectedTriangle, textureMap);
-        int blue = int((c) & 0xff);
-        int green = int((c >> 8) & 0xff);
-        int red = int((c >> 16) & 0xff);
-        if(reflectionIntersection.triangleIndex != lightIntersection.triangleIndex) {
-            red = int(float(red) * ambient);
-            green = int(float(green) * ambient);
-            blue = int(float(blue) * ambient);
-            return {red, green, blue};
-        } else {
-            return {red, green, blue};
+// calculate the vertex normal vector by taking the average neighbor face normal vector
+glm::vec3 vertexNormalCalculator(glm::vec3 vertex, const std::vector<ModelTriangle>& sphereModel) {
+    glm::vec3 vertexNormal;
+    float faceNumber = 0.0f;
+    for (ModelTriangle triangle : sphereModel) {
+        if (triangle.vertices[0] == vertex || triangle.vertices[1] == vertex || triangle.vertices[2] == vertex) {
+            faceNumber++;
+            vertexNormal += triangle.normal;
         }
-    } else if(reflectionIntersection.triangleIndex != lightIntersection.triangleIndex) {
-        int red = int(float(colour.red) * ambient);
-        int green = int(float(colour.green) * ambient);
-        int blue = int(float(colour.blue) * ambient);
-        return {red, green, blue};
-    } else if(reflectionIntersection.intersectedTriangle.colour.name == "Blue") {
-        return getRefractionColour(modelTriangles, lightPosition, reflectionIntersection, reflectionRay, ambient, index+1, textureMap);
-    } else {
-        return colour;
     }
+    // The vertex normal vector is equal to the average neighbor face normal vector
+    vertexNormal = vertexNormal * (1 / faceNumber);
+    return glm::normalize(vertexNormal);
 }
 
 glm::vec3 getRefractionDirection(float air, float glass, glm::vec3 incidenceRay, glm::vec3 normal) {
@@ -818,146 +796,262 @@ glm::vec3 getRefractionDirection(float air, float glass, glm::vec3 incidenceRay,
     return direction;
 }
 
-Colour getRefractionColour(const std::vector<ModelTriangle>& modelTriangles, glm::vec3 lightPosition, const RayTriangleIntersection& intersection, glm::vec3 input, float ambient, int index, TextureMap textureMap) {
-    glm::vec3 lightDirection = glm::normalize(intersection.intersectionPoint - lightPosition);
-    RayTriangleIntersection lightIntersection = getClosestIntersection(lightPosition, lightDirection, modelTriangles);
-    if(index==5) {
+float fresnel(glm::vec3 incident, glm::vec3 normal, float refractiveIndex) {
+    float cosi = glm::dot(incident, normal);
+    float etai = 1;
+    float etat = refractiveIndex;
+
+    if (cosi > 0){
+        std::swap(etai, etat);
+    }
+    float eta = etai / etat;
+    float sint = eta * sqrtf(std::max(0.f, 1 - cosi * cosi));
+
+    if (sint >= 1){
+        return 1;
+    } else {
+        float cost = sqrtf(std::max(0.f, 1 - sint * sint));
+        cosi = fabsf(cosi);
+        float Rs = ((etat * cosi) - (etai * cost)) / ((etat * cosi) + (etai * cost));
+        float Rp = ((etai * cosi) - (etat * cost)) / ((etai * cosi) + (etat * cost));
+        return (Rs * Rs + Rp * Rp) * 0.5f;
+    }
+    return 0;
+}
+
+Colour castRay(glm::vec3 cameraPosition, glm::vec3 lightPosition, glm::vec3 rayDirection, const std::vector<ModelTriangle>& modelTriangles, float lightPower, float ambient, const TextureMap& textureMap, int index, shadow shadowType, shading shadeType) {
+    if(index >= 5) {
         return {255, 255, 255};
     }
-    glm::vec3 refractDirection = getRefractionDirection(1.0f, 1.5f, input, intersection.intersectedTriangle.normal);
-    glm::vec3 updatePoint;
-    if(glm::dot(input, intersection.intersectedTriangle.normal) < 0.0f){
-        updatePoint = intersection.intersectionPoint - intersection.intersectedTriangle.normal * float(0.0001);
-    } else {
-        updatePoint = intersection.intersectionPoint + intersection.intersectedTriangle.normal * float(0.0001);
-    }
-    RayTriangleIntersection refractionIntersection = getClosestIntersection(updatePoint, refractDirection, modelTriangles);
-    Colour colour = refractionIntersection.intersectedTriangle.colour;
+    // Get the closest intersect model with ray
+    RayTriangleIntersection closestIntersection = getClosestIntersection(cameraPosition, rayDirection, modelTriangles);
+    glm::vec3 point = closestIntersection.intersectionPoint;
+    glm::vec3 v0 = closestIntersection.intersectedTriangle.vertices[0];
+    glm::vec3 v1 = closestIntersection.intersectedTriangle.vertices[1];
+    glm::vec3 v2 = closestIntersection.intersectedTriangle.vertices[2];
+    // Shoot a ray from lightPosition to intersected point
+    glm::vec3 lightDirection = glm::normalize(point - lightPosition);
+    // Get the closest intersect model with light
+    RayTriangleIntersection lightIntersection = getClosestIntersection(lightPosition, lightDirection, modelTriangles);
+    glm::vec3 view = glm::normalize(point - cameraPosition);
 
-    if(refractionIntersection.intersectedTriangle.colour.name == "Yellow") {
-        colour = getReflectionColour(modelTriangles, lightPosition, refractionIntersection, refractDirection, ambient, textureMap, index+1);
-    } else if(refractionIntersection.intersectedTriangle.colour.name == "Cobbles") {
-        glm::vec3 v0 = refractionIntersection.intersectedTriangle.vertices[0];
-        glm::vec3 v1 = refractionIntersection.intersectedTriangle.vertices[1];
-        glm::vec3 v2 = refractionIntersection.intersectedTriangle.vertices[2];
-        glm::vec3 p = refractionIntersection.intersectionPoint;
-        float alpha = ((-(p.x-v1.x)*(v2.y-v1.y)+(p.y-v1.y)*(v2.x-v1.x))/(-(v0.x-v1.x)*(v2.y-v1.y)+(v0.y-v1.y)*(v2.x-v1.x)))/abs(v0.z);
-        float beta = ((-(p.x-v2.x)*(v0.y-v2.y)+(p.y-v2.y)*(v0.x-v2.x))/(-(v1.x-v2.x)*(v0.y-v2.y)+(v1.y-v2.y)*(v0.x-v2.x)))/abs(v1.z);
-        float gamma = (1 - alpha - beta)/abs(v2.z);
-        uint32_t c = modelTextureMapper(alpha, beta, gamma, refractionIntersection.intersectedTriangle, textureMap);
-        int blue = int((c) & 0xff);
-        int green = int((c >> 8) & 0xff);
-        int red = int((c >> 16) & 0xff);
-        if(refractionIntersection.triangleIndex != lightIntersection.triangleIndex) {
-            red = int(float(red) * ambient);
-            green = int(float(green) * ambient);
-            blue = int(float(blue) * ambient);
-            return {red, green, blue};
+    // Draw colour
+    Colour colour = closestIntersection.intersectedTriangle.colour;
+
+    // Mirror
+    if (closestIntersection.intersectedTriangle.colour.name == "Yellow") {
+        glm::vec3 reflectionRay = glm::normalize(rayDirection - (2.0f * closestIntersection.intersectedTriangle.normal * glm::dot(rayDirection, closestIntersection.intersectedTriangle.normal)));
+        return castRay(closestIntersection.intersectionPoint, lightPosition, reflectionRay, modelTriangles, lightPower, ambient, textureMap, index+1,shadowType, shadeType);
+    } else if (closestIntersection.intersectedTriangle.colour.name == "Cobbles") {
+        float alpha = ((-(point.x - v1.x) * (v2.y - v1.y) + (point.y - v1.y) * (v2.x - v1.x)) /
+                       (-(v0.x - v1.x) * (v2.y - v1.y) + (v0.y - v1.y) * (v2.x - v1.x))) / abs(v0.z);
+        float beta = ((-(point.x - v2.x) * (v0.y - v2.y) + (point.y - v2.y) * (v0.x - v2.x)) /
+                      (-(v1.x - v2.x) * (v0.y - v2.y) + (v1.y - v2.y) * (v0.x - v2.x))) / abs(v1.z);
+        float gamma = (1 - alpha - beta) / abs(v2.z);
+        uint32_t c = modelTextureMapper(alpha, beta, gamma, closestIntersection.intersectedTriangle, textureMap);
+        colour.blue = int((c) & 0xff);
+        colour.green = int((c >> 8) & 0xff);
+        colour.red = int((c >> 16) & 0xff);
+    } else if (closestIntersection.intersectedTriangle.colour.name == "Blue") {
+        glm::vec3 refractDirection = getRefractionDirection(1.0f, 1.3f, rayDirection, closestIntersection.intersectedTriangle.normal);
+        glm::vec3 updatePoint = closestIntersection.intersectionPoint;
+        if(glm::dot(rayDirection, closestIntersection.intersectedTriangle.normal) < 0.0f){
+            updatePoint = point - closestIntersection.intersectedTriangle.normal * float(0.0001);
         } else {
-            return {red, green, blue};
+            updatePoint = point + closestIntersection.intersectedTriangle.normal * float(0.0001);
         }
-    } else if(refractionIntersection.intersectionPoint == glm::vec3(0, 0, 0)){
-        return {0, 0, 0};
-    } else if(refractionIntersection.intersectedTriangle.colour.name == "Blue"){
-        colour = getRefractionColour(modelTriangles, lightPosition, refractionIntersection, refractDirection, ambient, index+1, textureMap);
+        glm::vec3 reflectionRay = glm::normalize(rayDirection - (2.0f * closestIntersection.intersectedTriangle.normal * glm::dot(rayDirection, closestIntersection.intersectedTriangle.normal)));
+        Colour reflectionColour = castRay(closestIntersection.intersectionPoint, lightPosition, reflectionRay, modelTriangles, lightPower, ambient, textureMap, index+1, shadowType, shadeType);
+        Colour refractionColour = castRay(updatePoint, lightPosition, refractDirection, modelTriangles, lightPower, ambient, textureMap, index+1, shadowType, shadeType);
+        float reflectiveConstant = fresnel(rayDirection, closestIntersection.intersectedTriangle.normal, 1.3f);
+        float refractiveConstant = 1 - reflectiveConstant;
+
+        Colour mixColour;
+        mixColour.red = int(round((reflectiveConstant * float(reflectionColour.red)) + (refractiveConstant * float(refractionColour.red))));
+        mixColour.green = int(round((reflectiveConstant * float(reflectionColour.green)) + (refractiveConstant * float(refractionColour.green))));
+        mixColour.blue = int(round((reflectiveConstant * float(reflectionColour.blue)) + (refractiveConstant * float(refractionColour.blue))));
+        return mixColour;
     }
-    return colour;
+
+    // Calculate brightness
+    float brightness = 0;
+    if(shadeType != FLAT) {
+        // Calculate Barycentric coordinates
+        float v0X = v0.x;
+        float v0Y = v0.y;
+        float v0Z = v0.z;
+        float v1X = v1.x;
+        float v1Y = v1.y;
+        float v1Z = v1.z;
+        float v2X = v2.x;
+        float v2Y = v2.y;
+        float v2Z = v2.z;
+        float pointX = point.x;
+        float pointY = point.y;
+        float pointZ = point.z;
+
+        if (v0X == v1X && v1X == v2X) {
+            v0X = v0Z;
+            v1X = v1Z;
+            v2X = v2Z;
+            pointX = pointZ;
+        } else if(v0Y == v1Y && v1Y == v2Y) {
+            v0Y = v0Z;
+            v1Y = v1Z;
+            v2Y = v2Z;
+            pointX = pointZ;
+        }
+        float alpha = (-(pointX-v1X)*(v2Y-v1Y)+(pointY-v1Y)*(v2X-v1X))/(-(v0X-v1X)*(v2Y-v1Y)+(v0Y-v1Y)*(v2X-v1X));
+        float beta = (-(pointX-v2X)*(v0Y-v2Y)+(pointY-v2Y)*(v0X-v2X))/(-(v1X-v2X)*(v0Y-v2Y)+(v1Y-v2Y)*(v0X-v2X));
+        float gamma = 1 - alpha - beta;
+
+        // Calculate the vertex normal
+        glm::vec3 vn0 = vertexNormalCalculator(v0, modelTriangles);
+        glm::vec3 vn1 = vertexNormalCalculator(v1, modelTriangles);
+        glm::vec3 vn2 = vertexNormalCalculator(v2, modelTriangles);
+
+        if(shadeType == GOURAND){
+            glm::vec3 lightDirection0 = glm::normalize(v0 - lightPosition);
+            glm::vec3 lightDirection1 = glm::normalize(v1 - lightPosition);
+            glm::vec3 lightDirection2 = glm::normalize(v2 - lightPosition);
+
+            // Proximity Lighting
+            glm::vec3 v0ToLight = lightPosition - v0;
+            glm::vec3 v1ToLight = lightPosition - v1;
+            glm::vec3 v2ToLight = lightPosition - v2;
+            float distance0 = glm::length(v0ToLight);
+            float distance1 = glm::length(v1ToLight);
+            float distance2 = glm::length(v2ToLight);
+            float pL0 = lightPower / (4 * PI * distance0 * distance0);
+            float pL1 = lightPower / (4 * PI * distance1 * distance1);
+            float pL2 = lightPower / (4 * PI * distance2 * distance2);
+            // Angle of Incidence Lighting
+            float incidenceAngle0 = std::max(0.0f, glm::dot(lightDirection0, vn0));
+            float incidenceAngle1 = std::max(0.0f, glm::dot(lightDirection1, vn1));
+            float incidenceAngle2 = std::max(0.0f, glm::dot(lightDirection2, vn2));
+            pL0 = pL0 * incidenceAngle0;
+            pL1 = pL1 * incidenceAngle1;
+            pL2 = pL2 * incidenceAngle2;
+
+            // Specular Lighting
+            float glossy = 256;
+            glm::vec3 view0 = glm::normalize(v0 - cameraPosition);
+            glm::vec3 view1 = glm::normalize(v1 - cameraPosition);
+            glm::vec3 view2 = glm::normalize(v2 - cameraPosition);
+            glm::vec3 reflectionVector0 = lightDirection0 - (2.0f * vn0 * glm::dot(vn0, lightDirection0));
+            glm::vec3 reflectionVector1 = lightDirection1 - (2.0f * vn1 * glm::dot(vn1, lightDirection1));
+            glm::vec3 reflectionVector2 = lightDirection2 - (2.0f * vn2 * glm::dot(vn2, lightDirection2));
+            float sL0 = glm::pow(glm::dot(reflectionVector0, view0), glossy);
+            float sL1 = glm::pow(glm::dot(reflectionVector1, view1), glossy);
+            float sL2 = glm::pow(glm::dot(reflectionVector2, view2), glossy);
+
+            // Calculate pixel brightness
+            // Add all type of light
+            float brightness0 = pL0 + sL0 + ambient;
+            float brightness1 = pL1 + sL1 + ambient;
+            float brightness2 = pL2 + sL2 + ambient;
+            brightness = alpha*brightness0 + beta*brightness1 + gamma*brightness2;
+        } else if(shadeType == PHONG){
+            // Interpolation for normal vector
+            glm::vec3 normal = alpha*vn0 + beta*vn1 + gamma*vn2;
+
+            // Proximity Lighting
+            glm::vec3 pointToLight = lightPosition - point;
+            float distance = glm::length(pointToLight);
+            float pL = lightPower / (4 * PI * distance * distance);
+            // Angle of Incidence Lighting
+            float incidenceAngle = std::max(0.0f, glm::dot(lightDirection, normal));
+            pL = pL * incidenceAngle;
+
+            // Specular Lighting
+            float glossy = 256;
+            glm::vec3 reflectionVector = lightDirection - (2.0f * normal * glm::dot(normal, lightDirection));
+            float sL = glm::pow(glm::dot(reflectionVector, view), glossy);
+
+            brightness = pL + sL + ambient;
+        }
+    } else {
+        // Proximity Lighting
+        glm::vec3 pointToLight = lightPosition - closestIntersection.intersectionPoint;
+        float distance = glm::length(pointToLight);
+        float pL = lightPower / (4 * PI * distance * distance);
+        // Angle of Incidence Lighting
+        // If the angle is less than 0, the PL will be zero, which means there do not have proximity light in that point
+        float incidenceAngle = std::max(0.0f, glm::dot(lightDirection, closestIntersection.intersectedTriangle.normal));
+        pL = pL * incidenceAngle;
+
+        // Specular Lighting
+        float glossy = 256;
+        glm::vec3 reflectionVector = lightDirection - (2.0f * closestIntersection.intersectedTriangle.normal * glm::dot(closestIntersection.intersectedTriangle.normal,lightDirection));
+        float sL = glm::pow(glm::dot(reflectionVector, view), glossy);
+
+        // Calculate pixel brightness
+        // Add all type of light
+        brightness = pL + sL + ambient;
+    }
+
+    // Using the brightness to multiply each RGB channel
+    // The colour can not greater than 255
+    float red = std::min((float(colour.red) * brightness), 255.0f);
+    float green = std::min((float(colour.green) * brightness), 255.0f);
+    float blue = std::min((float(colour.blue) * brightness), 255.0f);
+    if(shadowType == HARD) {
+        if(closestIntersection.triangleIndex != lightIntersection.triangleIndex && closestIntersection.intersectedTriangle.colour.name != "Yellow") {
+            if(index <= 2) {
+                // Hard shadow
+                red = red * ambient;
+                green = green * ambient;
+                blue = blue * ambient;
+            } else {
+                red = red * 0.7f;
+                green = green * 0.7f;
+                blue = blue * 0.7f;
+            }
+
+        }
+    } else {
+        // Soft shadow
+        if (closestIntersection.triangleIndex != lightIntersection.triangleIndex) {
+            std::vector<glm::vec3> lightPositions = multiLightPosition(lightPosition);
+            float number = 0.0f;
+            for(glm::vec3 i : lightPositions) {
+                glm::vec3 direction = glm::normalize(closestIntersection.intersectionPoint - i);
+                RayTriangleIntersection intersection = getClosestIntersection(lightPosition, direction, modelTriangles);
+                if(intersection.triangleIndex == closestIntersection.triangleIndex) {
+                    number = number + 1.0f;
+                }
+            }
+            auto shadowValue = glm::clamp<float>((number/float(lightPositions.size()) + ambient), 0, 1);
+            red = red * shadowValue;
+            green = green  * shadowValue;
+            blue = blue * shadowValue;
+        }
+    }
+
+    return {int(round(red)), int(round(green)), int(round(blue))};
 }
 
 void rayTraceWithLighting(DrawingWindow &window, const std::vector<ModelTriangle>& modelTriangles, glm::vec3 cameraPosition, glm::mat3 cameraOrientation, glm::vec3 lightPosition, float focalLength, float scalingFactor, float lightPower, float ambient, TextureMap textureMap) {
-    std::vector<glm::vec3> lightPositions = multiLightPosition(lightPosition);
     for(int y = 0; y < HEIGHT; y++) {
         for(int x = 0; x < WIDTH; x++) {
             // Convert pixel to 3D coordinate
-            CanvasPoint point = CanvasPoint(float(x), float(y));
-            glm::vec3 threeDPoint = get3DPoint(point, cameraPosition, cameraOrientation, focalLength, HEIGHT*2/3);
+            glm::vec3 threeDPoint = get3DPoint(CanvasPoint(float(x), float(y)), cameraPosition, cameraOrientation, focalLength, HEIGHT * 2 / 3);
             // Shoot a ray from cameraPosition to pixel world coordinate
             glm::vec3 rayDirection = glm::normalize(threeDPoint - cameraPosition);
             rayDirection = rayDirection * glm::inverse(cameraOrientation);
             // Get the closest intersect model with ray
             RayTriangleIntersection closestIntersection = getClosestIntersection(cameraPosition, rayDirection, modelTriangles);
             // Set the point on the outside of box is black
-            if(closestIntersection.intersectionPoint == glm::vec3(0, 0, 0)) {
+            if (closestIntersection.intersectionPoint == glm::vec3(0, 0, 0)) {
                 uint32_t c = (255 << 24) + (0 << 16) + (0 << 8) + (0);
                 window.setPixelColour(x, y, c);
                 continue;
             }
-
-            // Shoot a ray from lightPosition to intersected point
-            glm::vec3 lightDirection = glm::normalize(closestIntersection.intersectionPoint - lightPosition);
-            // Get the closest intersect model with light
-            RayTriangleIntersection lightIntersection = getClosestIntersection(lightPosition, lightDirection, modelTriangles);
-
-            // Proximity Lighting
-            glm::vec3 pointToLight = lightPosition - closestIntersection.intersectionPoint;
-            float distance = glm::length(pointToLight);
-            float pL = lightPower / (4 * PI * distance * distance);
-            // Angle of Incidence Lighting
-            // If the angle is less than 0, the PL will be zero, which means there do not have proximity light in that point
-            float incidenceAngle = std::max(0.0f, glm::dot(lightDirection, closestIntersection.intersectedTriangle.normal));
-            pL = pL * incidenceAngle;
-
-            // Specular Lighting
-            float glossy = 256;
-            glm::vec3 view = glm::normalize(closestIntersection.intersectionPoint - cameraPosition);
-            glm::vec3 reflectionVector = lightDirection - (2.0f * closestIntersection.intersectedTriangle.normal * glm::dot(closestIntersection.intersectedTriangle.normal, lightDirection));
-            float sL = glm::pow(glm::dot(reflectionVector, view), glossy);
-
-            // Calculate pixel brightness
-            // Add all type of light
-            point.brightness = pL + sL + ambient;
-
-            // Draw colour
-            Colour colour = closestIntersection.intersectedTriangle.colour;
-
-            // Mirror
-            if(closestIntersection.intersectedTriangle.colour.name == "Yellow") {
-                colour = getReflectionColour(modelTriangles, lightPosition, closestIntersection, view, ambient, textureMap, 1);
-            } else if(closestIntersection.intersectedTriangle.colour.name == "Cobbles") {
-                glm::vec3 v0 = closestIntersection.intersectedTriangle.vertices[0];
-                glm::vec3 v1 = closestIntersection.intersectedTriangle.vertices[1];
-                glm::vec3 v2 = closestIntersection.intersectedTriangle.vertices[2];
-                glm::vec3 p = closestIntersection.intersectionPoint;
-                float alpha = ((-(p.x-v1.x)*(v2.y-v1.y)+(p.y-v1.y)*(v2.x-v1.x))/(-(v0.x-v1.x)*(v2.y-v1.y)+(v0.y-v1.y)*(v2.x-v1.x)))/abs(v0.z);
-                float beta = ((-(p.x-v2.x)*(v0.y-v2.y)+(p.y-v2.y)*(v0.x-v2.x))/(-(v1.x-v2.x)*(v0.y-v2.y)+(v1.y-v2.y)*(v0.x-v2.x)))/abs(v1.z);
-                float gamma = (1 - alpha - beta)/abs(v2.z);
-                uint32_t c = modelTextureMapper(alpha, beta, gamma, closestIntersection.intersectedTriangle, textureMap);
-                colour.blue = int((c) & 0xff);
-                colour.green = int((c >> 8) & 0xff);
-                colour.red = int((c >> 16) & 0xff);
-            }
-            else if(closestIntersection.intersectedTriangle.colour.name == "Blue") {
-                colour = getRefractionColour(modelTriangles, lightPosition, closestIntersection, view, ambient, 1, textureMap);
-            }
-
-            // Using the brightness to multiply each RGB channel
-            // The colour can not greater than 255
-            float red = std::min((float(colour.red) * point.brightness), 255.0f);
-            float green = std::min((float(colour.green) * point.brightness), 255.0f);
-            float blue = std::min((float(colour.blue) * point.brightness), 255.0f);
-            if (closestIntersection.triangleIndex != lightIntersection.triangleIndex && closestIntersection.intersectedTriangle.colour.name != "Yellow") {
-                // Hard shadow
-                red = red * ambient;
-                green = green * ambient;
-                blue = blue * ambient;
-
-            }
-
-//            if (closestIntersection.triangleIndex != lightIntersection.triangleIndex) {
-//                float number = 0.0f;
-//                for(glm::vec3 i : lightPositions) {
-//                    glm::vec3 direction = glm::normalize(closestIntersection.intersectionPoint - i);
-//                    RayTriangleIntersection intersection = getClosestIntersection(lightPosition, direction, modelTriangles);
-//                    if(intersection.triangleIndex == closestIntersection.triangleIndex) {
-//                        number = number + 1.0f;
-//                    }
-//                }
-//                red = red * number/25.0f * ambient;
-//                green = green  * number/25.0f * ambient;
-//                blue = blue * number/25.0f * ambient;
-//            }
-
-            uint32_t c = (255 << 24) + (int(round(red)) << 16) + (int(round(green)) << 8) + (int(round(blue)));
+            Colour colour = castRay(cameraPosition, lightPosition, rayDirection, modelTriangles, lightPower, ambient, textureMap, 1, HARD, FLAT);
+            int red = colour.red;
+            int blue = colour.blue;
+            int green = colour.green;
+            uint32_t c = (255 << 24) + (red << 16) + (green << 8) + (blue);
             window.setPixelColour(x, y, c);
         }
     }
@@ -1020,21 +1114,6 @@ void drawSphereWithFlatShading(DrawingWindow &window, const std::vector<ModelTri
             window.setPixelColour(x, y, c);
         }
     }
-}
-
-// calculate the vertex normal vector by taking the average neighbor face normal vector
-glm::vec3 vertexNormalCalculator(glm::vec3 vertex, const std::vector<ModelTriangle>& sphereModel) {
-    glm::vec3 vertexNormal;
-    float faceNumber = 0.0f;
-    for (ModelTriangle triangle : sphereModel) {
-        if (triangle.vertices[0] == vertex || triangle.vertices[1] == vertex || triangle.vertices[2] == vertex) {
-            faceNumber++;
-            vertexNormal += triangle.normal;
-        }
-    }
-    // The vertex normal vector is equal to the average neighbor face normal vector
-    vertexNormal = vertexNormal * (1 / faceNumber);
-    return glm::normalize(vertexNormal);
 }
 
 void drawSphereWithGourandShading(DrawingWindow &window, const std::vector<ModelTriangle>& sphereModel, glm::vec3 cameraPosition, glm::mat3 cameraOrientation, glm::vec3 lightPosition, float focalLength, float scalingFactor, float lightPower, float ambient) {
