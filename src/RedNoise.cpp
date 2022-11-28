@@ -605,21 +605,6 @@ glm::vec3 get3DPoint(CanvasPoint point, glm::vec3 cameraPosition, glm::mat3 came
     return threeDPoint;
 }
 
-glm::vec3 get3DPoint2(CanvasPoint point, glm::vec3 cameraPosition, glm::mat3 cameraOrientation, float focalLength, float scalingFactor) {
-    float u = point.x;
-    float v = point.y;
-    // The focal length is the distance between the window and camera
-    float z = cameraPosition.z - focalLength;
-    float x = ((u - (float(WIDTH)/2)) / ((scalingFactor)));
-    float y = ((v - (float(HEIGHT)/2)) / ((-scalingFactor)));
-    glm::vec3 threeDPoint (x, y, z);
-    // Using cameraOrientation to correct the 3D point
-//    threeDPoint = cameraOrientation * threeDPoint;
-    threeDPoint = {threeDPoint.x + cameraPosition.x, threeDPoint.y + cameraPosition.y, threeDPoint.z+(-cameraPosition.z)};
-    // std::cout << threeDPoint.x << " " << threeDPoint.y << " " << threeDPoint.z << std::endl;
-    return threeDPoint;
-}
-
 RayTriangleIntersection getClosestIntersection(glm::vec3 source, glm::vec3 rayDirection, const std::vector<ModelTriangle>& modelTriangles) {
     RayTriangleIntersection closestIntersection;
     // Set the initial distance is as large as possible
@@ -815,36 +800,22 @@ Colour getReflectionColour(const std::vector<ModelTriangle>& modelTriangles, glm
 }
 
 glm::vec3 getRefractionDirection(float air, float glass, glm::vec3 incidenceRay, glm::vec3 normal) {
-//    glm::vec3 direction (0, 0, 0);
-//    auto incidenceAngle = glm::clamp<float>(glm::dot(incidenceRay, normal), -1.0f, 1.0f);
-//    float eta = 0.0f;
-//    float k = 0.0f;
-//    if(incidenceAngle > 0) {
-//        eta = glass / air;
-//        normal = -normal;
-//    } else {
-//        eta = air / glass;
-//    }
-//    k = 1 - eta * eta * (1 - incidenceAngle * incidenceAngle);
-//    if(k < 0){
-//        return direction;
-//    }
-//    glm::vec3 refractionRay = incidenceRay*eta + normal * (eta * incidenceAngle - sqrt(k));
-//    direction = refractionRay;
-//    return direction;
-    glm::vec3  I = incidenceRay;
-    glm::vec3 N = normal;
-    float cosi = -std::max(-1.f, std::min(1.f, glm::dot(I, N)));
-    float etai = air, etat = glass;
-    glm::vec3 n = N;
-    if (cosi < 0){
-        cosi = -cosi;
-        std::swap(etai, etat);
-        n = -N;
+    glm::vec3 direction (0, 0, 0);
+    auto incidenceAngle = glm::clamp<float>(glm::dot(incidenceRay, normal), -1.0f, 1.0f);
+    float eta = 0.0f;
+    float k = 0.0f;
+    if(incidenceAngle > 0) {
+        eta = glass / air;
+        normal = -normal;
+    } else {
+        eta = air / glass;
     }
-    float eta = etai / etat;
-    float k = 1 - eta * eta * (1 - cosi * cosi);
-    return k < 0 ? glm::vec3{0, 0, 0} : I * eta + n * (eta * cosi - sqrtf(k));
+    k = 1 - eta * eta * (1 - abs(incidenceAngle) * abs(incidenceAngle));
+    if(k < 0){
+        return direction;
+    }
+    direction = glm::normalize(incidenceRay*eta + normal * (eta * incidenceAngle - sqrt(k)));
+    return direction;
 }
 
 Colour getRefractionColour(const std::vector<ModelTriangle>& modelTriangles, glm::vec3 lightPosition, const RayTriangleIntersection& intersection, glm::vec3 input, float ambient, int index, TextureMap textureMap) {
@@ -854,12 +825,13 @@ Colour getRefractionColour(const std::vector<ModelTriangle>& modelTriangles, glm
         return {255, 255, 255};
     }
     glm::vec3 refractDirection = getRefractionDirection(1.0f, 1.5f, input, intersection.intersectedTriangle.normal);
-    if(glm::dot(refractDirection, intersection.intersectedTriangle.normal) < 0.0f){
-        refractDirection = intersection.intersectionPoint - intersection.intersectedTriangle.normal * float(0.0001);
+    glm::vec3 updatePoint;
+    if(glm::dot(input, intersection.intersectedTriangle.normal) < 0.0f){
+        updatePoint = intersection.intersectionPoint - intersection.intersectedTriangle.normal * float(0.0001);
     } else {
-        refractDirection = intersection.intersectionPoint + intersection.intersectedTriangle.normal * float(0.0001);
+        updatePoint = intersection.intersectionPoint + intersection.intersectedTriangle.normal * float(0.0001);
     }
-    RayTriangleIntersection refractionIntersection = getClosestIntersection(intersection.intersectionPoint, refractDirection, modelTriangles);
+    RayTriangleIntersection refractionIntersection = getClosestIntersection(updatePoint, refractDirection, modelTriangles);
     Colour colour = refractionIntersection.intersectedTriangle.colour;
 
     if(refractionIntersection.intersectedTriangle.colour.name == "Yellow") {
@@ -954,9 +926,9 @@ void rayTraceWithLighting(DrawingWindow &window, const std::vector<ModelTriangle
                 colour.green = int((c >> 8) & 0xff);
                 colour.red = int((c >> 16) & 0xff);
             }
-//            else if(closestIntersection.intersectedTriangle.colour.name == "Blue") {
-//                colour = getRefractionColour(modelTriangles, lightPosition, closestIntersection, view, ambient, 1, textureMap);
-//            }
+            else if(closestIntersection.intersectedTriangle.colour.name == "Blue") {
+                colour = getRefractionColour(modelTriangles, lightPosition, closestIntersection, view, ambient, 1, textureMap);
+            }
 
             // Using the brightness to multiply each RGB channel
             // The colour can not greater than 255
