@@ -442,6 +442,9 @@ std::vector<ModelTriangle> objReader(const std::string& objFile, const std::stri
                 TexturePoint vt2 = textureVertex[std::stoi(i[6])-1];
                 triangle.texturePoints = {vt0, vt1, vt2};
             }
+        } else {
+            triangle.colour = Colour(255, 165, 0);
+            triangle.colour.name = "Orange";
         }
 
         // normal
@@ -449,6 +452,95 @@ std::vector<ModelTriangle> objReader(const std::string& objFile, const std::stri
         modelTriangles.push_back(triangle);
     }
 
+    return modelTriangles;
+}
+
+std::vector<ModelTriangle> objReader2(const std::vector<std::string>& objFiles, const std::vector<std::string>& mtlFiles, float scalingFactor) {
+    std::vector<ModelTriangle> modelTriangles;
+    for(const std::string& objFile : objFiles) {
+        for(const std::string& mtlFile : mtlFiles) {
+            std::vector<glm::vec3> vertex;
+            std::vector<std::vector<std::string>> facets;
+            std::vector<TexturePoint> textureVertex;
+            // Create a text string, which is used to output the text objFile
+            std::string myText;
+            std::string colourName;
+            // Read from the text objFile
+            std::ifstream File(objFile);
+            // Use a while loop together with the getline() function to read the objFile line by line
+            while(getline(File, myText)) {
+                std::vector<std::string> text = split(myText, ' ');
+                // get colour
+                if(text[0] == "usemtl") {
+                    colourName = text[1];
+                    // get vertex coordinates
+                } else if(text[0] == "v") {
+                    glm::vec3 v = glm::vec3(std::stod(text[1]), std::stod(text[2]), std::stod(text[3]));
+                    vertex.push_back(v);
+                    // get triangle facets
+                } else if(text[0] == "vt"){
+                    std::cout << text[3] <<std::endl;
+                    TexturePoint vt = TexturePoint(std::stof(text[1]), std::stof(text[2]));
+                    textureVertex.push_back(vt);
+                } else if(text[0] == "f") {
+                    if(colourName == "Cobbles") {
+                        std::vector<std::string> faceVertex;
+                        std::vector<std::string> faceTextureVertex;
+                        for(int i = 1; i < 4; i++) {
+                            std::vector<std::string> t = split(text[i], '/');
+                            faceVertex.push_back(t[0]);
+                            faceTextureVertex.push_back(t[1]);
+                        }
+                        std::vector<std::string> f {faceVertex[0], faceVertex[1], faceVertex[2], colourName, faceTextureVertex[0], faceTextureVertex[1], faceTextureVertex[2]};
+                        facets.push_back(f);
+                    } else {
+                        std::vector<std::string> f {text[1], text[2], text[3], colourName};
+                        facets.push_back(f);
+                    }
+
+                }
+            }
+            // Close the File
+            File.close();
+            // Get mtl file
+            std::map<std::string, Colour> colourMap;
+            if(mtlFile != "null") {
+                colourMap = mtlReader(mtlFile);
+            }
+
+            // Create model triangle list
+            for(std::vector<std::string> i : facets) {
+                ModelTriangle triangle;
+                glm::vec3 v0 = vertex[std::stoi(i[0])-1];
+                glm::vec3 v1 = vertex[std::stoi(i[1])-1];
+                glm::vec3 v2 = vertex[std::stoi(i[2])-1];
+                if(mtlFile != "null") {
+                    triangle.colour = colourMap[i[3]];
+                    triangle.colour.name = i[3];
+                    if(triangle.colour.name == "Cobbles") {
+                        TexturePoint vt0 = textureVertex[std::stoi(i[4])-1];
+                        TexturePoint vt1 = textureVertex[std::stoi(i[5])-1];
+                        TexturePoint vt2 = textureVertex[std::stoi(i[6])-1];
+                        triangle.texturePoints = {vt0, vt1, vt2};
+                    }
+                }
+                if(objFile == "sphere.obj") {
+                    glm::vec3 moment {1.5, 3.265, 0};
+                    triangle.colour = Colour(255, 165, 0);
+                    triangle.colour.name = "Orange";
+                    v0 = v0 - moment;
+                    v1 = v1 - moment;
+                    v2 = v2 - moment;
+                }
+
+                triangle.vertices = {v0*scalingFactor, v1*scalingFactor, v2*scalingFactor};
+                // normal
+                triangle.normal = glm::normalize(glm::cross((triangle.vertices[2] - triangle.vertices[0]), (triangle.vertices[1] - triangle.vertices[0])));
+                modelTriangles.push_back(triangle);
+            }
+            break;
+        }
+    }
     return modelTriangles;
 }
 
@@ -963,6 +1055,7 @@ void drawSphereWithFlatShading(DrawingWindow &window, const std::vector<ModelTri
             glm::vec3 threeDPoint = get3DPoint(point, cameraPosition, cameraOrientation, focalLength, scalingFactor);
             // Calculate the ray direction
             glm::vec3 rayDirection = glm::normalize(threeDPoint - cameraPosition);
+            rayDirection = rayDirection * glm::inverse(cameraOrientation);
             // Get the closest intersect model with ray
             RayTriangleIntersection closestIntersection = getClosestIntersection(cameraPosition, rayDirection, sphereModel);
             // Get the light direction
@@ -990,7 +1083,7 @@ void drawSphereWithFlatShading(DrawingWindow &window, const std::vector<ModelTri
             point.brightness = pL + sL + ambient;
 
             // Draw colour
-            Colour colour = Colour(255, 0, 0);
+            Colour colour = closestIntersection.intersectedTriangle.colour;
             // Using the brightness to multiply each RGB channel
             // The colour can not greater than 255
             float red = std::min((float(colour.red) * point.brightness), 255.0f);
@@ -1022,6 +1115,7 @@ void drawSphereWithGourandShading(DrawingWindow &window, const std::vector<Model
             glm::vec3 threeDPoint = get3DPoint(canvasPoint, cameraPosition, cameraOrientation, focalLength, scalingFactor);
             // Calculate the ray direction
             glm::vec3 rayDirection = glm::normalize(threeDPoint - cameraPosition);
+            rayDirection = rayDirection * glm::inverse(cameraOrientation);
             // Get the closest intersect model with ray
             RayTriangleIntersection closestIntersection = getClosestIntersection(cameraPosition, rayDirection, sphereModel);
             // Set the point not in the ball is black
@@ -1095,7 +1189,7 @@ void drawSphereWithGourandShading(DrawingWindow &window, const std::vector<Model
             canvasPoint.brightness = alpha*brightness0 + beta*brightness1 + gamma*brightness2;
 
             // Draw colour
-            Colour colour = Colour(255, 0, 0);
+            Colour colour = closestIntersection.intersectedTriangle.colour;
             float red = std::min((float(colour.red) * canvasPoint.brightness), 255.0f);
             float green = std::min((float(colour.green) * canvasPoint.brightness), 255.0f);
             float blue = std::min((float(colour.blue) * canvasPoint.brightness), 255.0f);
@@ -1116,6 +1210,7 @@ void drawSphereWithPhoneShading(DrawingWindow &window, const std::vector<ModelTr
             glm::vec3 threeDPoint = get3DPoint(canvasPoint, cameraPosition, cameraOrientation, focalLength, scalingFactor);
             // Calculate the ray direction
             glm::vec3 rayDirection = glm::normalize(threeDPoint - cameraPosition);
+            rayDirection = rayDirection * glm::inverse(cameraOrientation);
             // Get the closest intersect model with ray
             RayTriangleIntersection closestIntersection = getClosestIntersection(cameraPosition, rayDirection, sphereModel);
             // Get the light direction
@@ -1159,7 +1254,7 @@ void drawSphereWithPhoneShading(DrawingWindow &window, const std::vector<ModelTr
             canvasPoint.brightness = pL + sL + ambient;
 
             // Draw colour
-            Colour colour = Colour(255, 0, 0);
+            Colour colour = closestIntersection.intersectedTriangle.colour;
             float red = std::min((float(colour.red) * canvasPoint.brightness), 255.0f);
             float green = std::min((float(colour.green) * canvasPoint.brightness), 255.0f);
             float blue = std::min((float(colour.blue) * canvasPoint.brightness), 255.0f);
@@ -1190,7 +1285,9 @@ shadow shadowType = HARD;
 shading shadeType = FLAT;
 
 // ---------------------- Box Model ---------------------- //
-std::vector<ModelTriangle> modelTriangles = objReader("textured-cornell-box.obj", "textured-cornell-box.mtl", 0.35);
+std::vector<std::string> objFileName {"textured-cornell-box.obj", "sphere.obj"};
+std::vector<std::string> mtlFileName {"textured-cornell-box.mtl", "null"};
+std::vector<ModelTriangle> modelTriangles = objReader2(objFileName, mtlFileName, 0.35);
 TextureMap textureMap = getTextureMap("chessboard.ppm");
 
 // ---------------------- Sphere Model ---------------------- //
@@ -1373,6 +1470,7 @@ void handleEvent(SDL_Event event, DrawingWindow &window) {
             window.clearPixels();
             scene = 3;
             shadowType = HARD;
+            shadeType = FLAT;
             rayTrace(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,
                      float(HEIGHT) * 2 / 3, lightPower, ambient, textureMap, shadowType, shadeType);
         } else if(event.key.keysym.sym == SDLK_4) {
@@ -1389,6 +1487,8 @@ void handleEvent(SDL_Event event, DrawingWindow &window) {
         } else if(event.key.keysym.sym == SDLK_5) {
             clearDepthBuffer();
             window.clearPixels();
+            cameraPosition = glm::vec3(0.0, 0.7, 5.2);
+            lightPosition = glm::vec3(-0.3, 1.0, 0.8);
             cameraOrientation = glm::mat3(1, 0, 0, 0, 1, 0, 0, 0, 1);
             lightPower = 4.0f;
             ambient = 0.4;
@@ -1398,6 +1498,8 @@ void handleEvent(SDL_Event event, DrawingWindow &window) {
         } else if(event.key.keysym.sym == SDLK_6) {
             clearDepthBuffer();
             window.clearPixels();
+            cameraPosition = glm::vec3(0.0, 0.7, 5.2);
+            lightPosition = glm::vec3(-0.3, 1.0, 0.8);
             cameraOrientation = glm::mat3(1, 0, 0, 0, 1, 0, 0, 0, 1);
             lightPower = 4.0f;
             ambient = 0.4;
