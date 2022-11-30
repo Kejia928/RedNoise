@@ -21,7 +21,7 @@ enum shading {
 };
 
 enum shadow {
-    SOFT, HARD, Phong
+    SOFT, HARD, NONE
 };
 
 float depthBuffer[HEIGHT][WIDTH];
@@ -634,111 +634,6 @@ RayTriangleIntersection getClosestIntersection(glm::vec3 source, glm::vec3 rayDi
     return closestIntersection;
 }
 
-void rayTrace(DrawingWindow &window, const std::vector<ModelTriangle>& modelTriangles, glm::vec3 cameraPosition, glm::mat3 cameraOrientation, float focalLength, float scalingFactor) {
-    int red;
-    int green;
-    int blue;
-    // Shoot a ray from cameraPosition to each pixel point
-    for(int y = 0; y < HEIGHT; y++) {
-        for(int x = 0; x < WIDTH; x++) {
-            CanvasPoint point = CanvasPoint(float(x), float(y));
-            // Convert the pixel point to world coordinate
-            glm::vec3 threeDPoint = get3DPoint(point, cameraPosition, cameraOrientation, focalLength, scalingFactor);
-            // Shoot a ray from cameraPosition to pixel world coordinate
-            glm::vec3 rayDirection = glm::normalize(threeDPoint - cameraPosition);
-            RayTriangleIntersection closestIntersection = getClosestIntersection(cameraPosition, rayDirection, modelTriangles);
-            // Draw
-            Colour colour = closestIntersection.intersectedTriangle.colour;
-            red = colour.red;
-            green = colour.green;
-            blue = colour.blue;
-            uint32_t c = (255 << 24) + (red << 16) + (green << 8) + (blue);
-            window.setPixelColour(x, y, c);
-        }
-    }
-}
-
-void rayTraceWithHardShadow(DrawingWindow &window, const std::vector<ModelTriangle>& modelTriangles, glm::vec3 cameraPosition, glm::mat3 cameraOrientation, glm::vec3 lightPosition, float focalLength, float scalingFactor) {
-    int red;
-    int green;
-    int blue;
-    // Shoot a ray from cameraPosition to each pixel point
-    for(int y = 0; y < HEIGHT; y++) {
-        for(int x = 0; x < WIDTH; x++) {
-            CanvasPoint point = CanvasPoint(float(x), float(y));
-            // Convert the pixel point to world coordinate
-            glm::vec3 threeDPoint = get3DPoint(point, cameraPosition, cameraOrientation, focalLength, scalingFactor);
-            // Shoot a ray from cameraPosition to pixel world coordinate
-            glm::vec3 rayDirection = glm::normalize(threeDPoint - cameraPosition);
-            RayTriangleIntersection closestIntersection = getClosestIntersection(cameraPosition, rayDirection, modelTriangles);
-            // Shoot a ray from lightPosition to intersected point
-            glm::vec3 lightDirection = glm::normalize(closestIntersection.intersectionPoint - lightPosition);
-            RayTriangleIntersection lightIntersection = getClosestIntersection(lightPosition, lightDirection, modelTriangles);
-            //std::cout << lightIntersection.intersectionPoint.x << " " << lightIntersection.intersectionPoint.y << " " << lightIntersection.intersectionPoint.z << std::endl;
-            // Draw
-            // If the ray intersection from camera does not same with the ray intersection from light,
-            // the area should be shadow, which means this area can not see the light.
-            if (closestIntersection.triangleIndex != lightIntersection.triangleIndex) {
-                red = 0;
-                green = 0;
-                blue = 0;
-            } else {
-                Colour colour = closestIntersection.intersectedTriangle.colour;
-                red = colour.red;
-                green = colour.green;
-                blue = colour.blue;
-            }
-            uint32_t c = (255 << 24) + (red << 16) + (green << 8) + (blue);
-            window.setPixelColour(x, y, c);
-        }
-    }
-}
-
-void rayTraceWithSoftShadow(DrawingWindow &window, const std::vector<ModelTriangle>& modelTriangles, glm::vec3 cameraPosition, glm::mat3 cameraOrientation, glm::vec3 lightPosition, float focalLength, float scalingFactor) {
-    int red;
-    int green;
-    int blue;
-    // Shoot a ray from cameraPosition to each pixel point
-    std::vector<glm::vec3> lightPositions = multiLightPosition(lightPosition);
-    for(int y = 0; y < HEIGHT; y++) {
-        for(int x = 0; x < WIDTH; x++) {
-            CanvasPoint point = CanvasPoint(float(x), float(y));
-            // Convert the pixel point to world coordinate
-            glm::vec3 threeDPoint = get3DPoint(point, cameraPosition, cameraOrientation, focalLength, scalingFactor);
-            // Shoot a ray from cameraPosition to pixel world coordinate
-            glm::vec3 rayDirection = glm::normalize(threeDPoint - cameraPosition);
-            RayTriangleIntersection closestIntersection = getClosestIntersection(cameraPosition, rayDirection, modelTriangles);
-            // Shoot a ray from lightPosition to intersected point
-            glm::vec3 lightDirection = glm::normalize(closestIntersection.intersectionPoint - lightPosition);
-            RayTriangleIntersection lightIntersection = getClosestIntersection(lightPosition, lightDirection, modelTriangles);
-            // Draw
-            // If the ray intersection from camera does not same with the ray intersection from light,
-            // the area should be shadow, which means this area can not see the light.
-            if (closestIntersection.triangleIndex != lightIntersection.triangleIndex) {
-                int number = 0;
-                for(glm::vec3 i : lightPositions) {
-                    glm::vec3 direction = glm::normalize(closestIntersection.intersectionPoint - i);
-                    RayTriangleIntersection intersection = getClosestIntersection(lightPosition, direction, modelTriangles);
-                    if(intersection.triangleIndex == closestIntersection.triangleIndex) {
-                        number++;
-                    }
-                }
-                Colour colour = closestIntersection.intersectedTriangle.colour;
-                red = colour.red * number/9 + 50;
-                green = colour.green * number/9 + 50;
-                blue = colour.blue * number/9 + 50;
-            } else {
-                Colour colour = closestIntersection.intersectedTriangle.colour;
-                red = colour.red;
-                green = colour.green;
-                blue = colour.blue;
-            }
-            uint32_t c = (255 << 24) + (red << 16) + (green << 8) + (blue);
-            window.setPixelColour(x, y, c);
-        }
-    }
-}
-
 // ---------------------- Week 7 ---------------------- //
 glm::vec3 moveLight(SDL_Event event, glm::vec3 lightPosition) {
     glm::vec3 newLightPosition = lightPosition;
@@ -875,7 +770,7 @@ Colour castRay(glm::vec3 cameraPosition, glm::vec3 lightPosition, glm::vec3 rayD
 
     // Calculate brightness
     float brightness = 0;
-    if(shadeType != FLAT) {
+    if(shadeType == GOURAND || shadeType == PHONG) {
         // Calculate Barycentric coordinates
         float v0X = v0.x;
         float v0Y = v0.y;
@@ -1009,7 +904,7 @@ Colour castRay(glm::vec3 cameraPosition, glm::vec3 lightPosition, glm::vec3 rayD
             }
 
         }
-    } else {
+    } else if (shadowType == SOFT){
         // Soft shadow
         if (closestIntersection.triangleIndex != lightIntersection.triangleIndex) {
             std::vector<glm::vec3> lightPositions = multiLightPosition(lightPosition);
@@ -1026,16 +921,17 @@ Colour castRay(glm::vec3 cameraPosition, glm::vec3 lightPosition, glm::vec3 rayD
             green = green  * shadowValue;
             blue = blue * shadowValue;
         }
+    } else {
+        return {int(round(red)), int(round(green)), int(round(blue))};
     }
-
     return {int(round(red)), int(round(green)), int(round(blue))};
 }
 
-void rayTraceWithLighting(DrawingWindow &window, const std::vector<ModelTriangle>& modelTriangles, glm::vec3 cameraPosition, glm::mat3 cameraOrientation, glm::vec3 lightPosition, float focalLength, float scalingFactor, float lightPower, float ambient, TextureMap textureMap) {
+void rayTrace(DrawingWindow &window, const std::vector<ModelTriangle>& modelTriangles, glm::vec3 cameraPosition, glm::mat3 cameraOrientation, glm::vec3 lightPosition, float focalLength, float scalingFactor, float lightPower, float ambient, const TextureMap& textureMap, shadow shadowType, shading shadeType) {
     for(int y = 0; y < HEIGHT; y++) {
         for(int x = 0; x < WIDTH; x++) {
             // Convert pixel to 3D coordinate
-            glm::vec3 threeDPoint = get3DPoint(CanvasPoint(float(x), float(y)), cameraPosition, cameraOrientation, focalLength, HEIGHT * 2 / 3);
+            glm::vec3 threeDPoint = get3DPoint(CanvasPoint(float(x), float(y)), cameraPosition, cameraOrientation, focalLength, scalingFactor);
             // Shoot a ray from cameraPosition to pixel world coordinate
             glm::vec3 rayDirection = glm::normalize(threeDPoint - cameraPosition);
             rayDirection = rayDirection * glm::inverse(cameraOrientation);
@@ -1047,7 +943,7 @@ void rayTraceWithLighting(DrawingWindow &window, const std::vector<ModelTriangle
                 window.setPixelColour(x, y, c);
                 continue;
             }
-            Colour colour = castRay(cameraPosition, lightPosition, rayDirection, modelTriangles, lightPower, ambient, textureMap, 1, HARD, FLAT);
+            Colour colour = castRay(cameraPosition, lightPosition, rayDirection, modelTriangles, lightPower, ambient, textureMap, 1, shadowType, shadeType);
             int red = colour.red;
             int blue = colour.blue;
             int green = colour.green;
@@ -1280,231 +1176,6 @@ void drawSphereWithPhoneShading(DrawingWindow &window, const std::vector<ModelTr
     }
 }
 
-void gourandShading(DrawingWindow &window, const std::vector<ModelTriangle>& sphereModel, glm::vec3 cameraPosition, glm::mat3 cameraOrientation, glm::vec3 lightPosition, float focalLength, float scalingFactor, float lightPower, float ambient) {
-    for(int y = 0; y < HEIGHT; y++) {
-        for(int x = 0; x < WIDTH; x++) {
-            // Convert pixel to 3D coordinate
-            CanvasPoint canvasPoint = CanvasPoint(float(x), float(y));
-            glm::vec3 threeDPoint = get3DPoint(canvasPoint, cameraPosition, cameraOrientation, focalLength, scalingFactor);
-            // Calculate the ray direction
-            glm::vec3 rayDirection = glm::normalize(threeDPoint - cameraPosition);
-            // Get the closest intersect model with ray
-            RayTriangleIntersection closestIntersection = getClosestIntersection(cameraPosition, rayDirection, sphereModel);
-            // Get the light direction
-            glm::vec3 lightDirection = glm::normalize(closestIntersection.intersectionPoint - lightPosition);
-            // Get the light intersection with each vertex
-            glm::vec3 v0 = closestIntersection.intersectedTriangle.vertices[0];
-            glm::vec3 v1 = closestIntersection.intersectedTriangle.vertices[1];
-            glm::vec3 v2 = closestIntersection.intersectedTriangle.vertices[2];
-            glm::vec3 lightDirection0 = glm::normalize(v0 - lightPosition);
-            glm::vec3 lightDirection1 = glm::normalize(v1 - lightPosition);
-            glm::vec3 lightDirection2 = glm::normalize(v2 - lightPosition);
-
-            // Get the closest intersect model with light
-            RayTriangleIntersection lightIntersection = getClosestIntersection(lightPosition, lightDirection, sphereModel);
-
-            glm::vec3 point = closestIntersection.intersectionPoint;
-            // Calculate the vertex normal
-            glm::vec3 vn0 = vertexNormalCalculator(v0, sphereModel);
-            glm::vec3 vn1 = vertexNormalCalculator(v1, sphereModel);
-            glm::vec3 vn2 = vertexNormalCalculator(v2, sphereModel);
-
-            // Proximity Lighting
-            glm::vec3 v0ToLight = lightPosition - v0;
-            glm::vec3 v1ToLight = lightPosition - v1;
-            glm::vec3 v2ToLight = lightPosition - v2;
-            float distance0 = glm::length(v0ToLight);
-            float distance1 = glm::length(v1ToLight);
-            float distance2 = glm::length(v2ToLight);
-            float pL0 = lightPower / (4 * PI * distance0 * distance0);
-            float pL1 = lightPower / (4 * PI * distance1 * distance1);
-            float pL2 = lightPower / (4 * PI * distance2 * distance2);
-            // Angle of Incidence Lighting
-            float incidenceAngle0 = std::max(0.0f, glm::dot(lightDirection0, vn0));
-            float incidenceAngle1 = std::max(0.0f, glm::dot(lightDirection1, vn1));
-            float incidenceAngle2 = std::max(0.0f, glm::dot(lightDirection2, vn2));
-            pL0 = pL0 * incidenceAngle0;
-            pL1 = pL1 * incidenceAngle1;
-            pL2 = pL2 * incidenceAngle2;
-
-            // Specular Lighting
-            float glossy = 256;
-            glm::vec3 view0 = glm::normalize(v0 - cameraPosition);
-            glm::vec3 view1 = glm::normalize(v1 - cameraPosition);
-            glm::vec3 view2 = glm::normalize(v2 - cameraPosition);
-            glm::vec3 reflectionVector0 = lightDirection0 - (2.0f * vn0 * glm::dot(vn0, lightDirection0));
-            glm::vec3 reflectionVector1 = lightDirection1 - (2.0f * vn1 * glm::dot(vn1, lightDirection1));
-            glm::vec3 reflectionVector2 = lightDirection2 - (2.0f * vn2 * glm::dot(vn2, lightDirection2));
-            float sL0 = glm::pow(glm::dot(reflectionVector0, view0), glossy);
-            float sL1 = glm::pow(glm::dot(reflectionVector1, view1), glossy);
-            float sL2 = glm::pow(glm::dot(reflectionVector2, view2), glossy);
-
-            // Calculate pixel brightness
-            // Add all type of light
-            float brightness0 = pL0 + sL0 + ambient;
-            float brightness1 = pL1 + sL1 + ambient;
-            float brightness2 = pL2 + sL2 + ambient;
-
-
-            // Calculate Barycentric coordinates
-            float v0X = v0.x;
-            float v0Y = v0.y;
-            float v0Z = v0.z;
-            float v1X = v1.x;
-            float v1Y = v1.y;
-            float v1Z = v1.z;
-            float v2X = v2.x;
-            float v2Y = v2.y;
-            float v2Z = v2.z;
-            float pointX = point.x;
-            float pointY = point.y;
-            float pointZ = point.z;
-
-            if (v0X == v1X && v1X == v2X) {
-                v0X = v0Z;
-                v1X = v1Z;
-                v2X = v2Z;
-                pointX = pointZ;
-            } else if(v0Y == v1Y && v1Y == v2Y) {
-                v0Y = v0Z;
-                v1Y = v1Z;
-                v2Y = v2Z;
-                pointX = pointZ;
-            }
-            float alpha = (-(pointX-v1X)*(v2Y-v1Y)+(pointY-v1Y)*(v2X-v1X))/(-(v0X-v1X)*(v2Y-v1Y)+(v0Y-v1Y)*(v2X-v1X));
-            float beta = (-(pointX-v2X)*(v0Y-v2Y)+(pointY-v2Y)*(v0X-v2X))/(-(v1X-v2X)*(v0Y-v2Y)+(v1Y-v2Y)*(v0X-v2X));
-            float gamma = 1 - alpha - beta;
-            // Interpolation
-            canvasPoint.brightness = alpha*brightness0 + beta*brightness1 + gamma*brightness2;
-
-            // Draw colour
-            Colour colour = closestIntersection.intersectedTriangle.colour;
-            // Using the brightness to multiply each RGB channel
-            // The colour can not greater than 255
-            float red = std::min((float(colour.red) * canvasPoint.brightness), 255.0f);
-            float green = std::min((float(colour.green) * canvasPoint.brightness), 255.0f);
-            float blue = std::min((float(colour.blue) * canvasPoint.brightness), 255.0f);
-
-            if (closestIntersection.triangleIndex != lightIntersection.triangleIndex) {
-                // Hard shadow
-                red = red * ambient;
-                green = green * ambient;
-                blue = blue * ambient;
-            }
-
-            // Set the point not in the ball is black
-            if(closestIntersection.intersectionPoint == glm::vec3(0, 0, 0)) {
-                red = 0;
-                green = 0;
-                blue = 0;
-            }
-
-            uint32_t c = (255 << 24) + (int(round(red)) << 16) + (int(round(green)) << 8) + (int(round(blue)));
-            window.setPixelColour(x, y, c);
-        }
-    }
-}
-
-void phoneShading(DrawingWindow &window, const std::vector<ModelTriangle>& sphereModel, glm::vec3 cameraPosition, glm::mat3 cameraOrientation, glm::vec3 lightPosition, float focalLength, float scalingFactor, float lightPower, float ambient) {
-    for(int y = 0; y < HEIGHT; y++) {
-        for(int x = 0; x < WIDTH; x++) {
-            // Convert pixel to 3D coordinate
-            CanvasPoint canvasPoint = CanvasPoint(float(x), float(y));
-            glm::vec3 threeDPoint = get3DPoint(canvasPoint, cameraPosition, cameraOrientation, focalLength, scalingFactor);
-            // Calculate the ray direction
-            glm::vec3 rayDirection = glm::normalize(threeDPoint - cameraPosition);
-            // Get the closest intersect model with ray
-            RayTriangleIntersection closestIntersection = getClosestIntersection(cameraPosition, rayDirection, sphereModel);
-            // Get the light direction
-            glm::vec3 lightDirection = glm::normalize(closestIntersection.intersectionPoint - lightPosition);
-            // Get the closest intersect model with light
-            RayTriangleIntersection lightIntersection = getClosestIntersection(lightPosition, lightDirection, sphereModel);
-
-            glm::vec3 point = closestIntersection.intersectionPoint;
-            // Calculate the vertex normal
-            glm::vec3 v0 = closestIntersection.intersectedTriangle.vertices[0];
-            glm::vec3 v1 = closestIntersection.intersectedTriangle.vertices[1];
-            glm::vec3 v2 = closestIntersection.intersectedTriangle.vertices[2];
-            glm::vec3 vn0 = vertexNormalCalculator(v0, sphereModel);
-            glm::vec3 vn1 = vertexNormalCalculator(v1, sphereModel);
-            glm::vec3 vn2 = vertexNormalCalculator(v2, sphereModel);
-
-            // Calculate Barycentric coordinates
-            float v0X = v0.x;
-            float v0Y = v0.y;
-            float v0Z = v0.z;
-            float v1X = v1.x;
-            float v1Y = v1.y;
-            float v1Z = v1.z;
-            float v2X = v2.x;
-            float v2Y = v2.y;
-            float v2Z = v2.z;
-            float pointX = point.x;
-            float pointY = point.y;
-            float pointZ = point.z;
-
-            if (v0X == v1X && v1X == v2X) {
-                v0X = v0Z;
-                v1X = v1Z;
-                v2X = v2Z;
-                pointX = pointZ;
-            } else if(v0Y == v1Y && v1Y == v2Y) {
-                v0Y = v0Z;
-                v1Y = v1Z;
-                v2Y = v2Z;
-                pointX = pointZ;
-            }
-            float alpha = (-(pointX-v1X)*(v2Y-v1Y)+(pointY-v1Y)*(v2X-v1X))/(-(v0X-v1X)*(v2Y-v1Y)+(v0Y-v1Y)*(v2X-v1X));
-            float beta = (-(pointX-v2X)*(v0Y-v2Y)+(pointY-v2Y)*(v0X-v2X))/(-(v1X-v2X)*(v0Y-v2Y)+(v1Y-v2Y)*(v0X-v2X));
-            float gamma = 1 - alpha - beta;
-
-            // Interpolation for normal vector
-            glm::vec3 normal = alpha*vn0 + beta*vn1 + gamma*vn2;
-
-            // Proximity Lighting
-            glm::vec3 pointToLight = lightPosition - closestIntersection.intersectionPoint;
-            float distance = glm::length(pointToLight);
-            float pL = lightPower / (4 * PI * distance * distance);
-            // Angle of Incidence Lighting
-            float incidenceAngle = std::max(0.0f, glm::dot(lightDirection, normal));
-            pL = pL * incidenceAngle;
-
-            // Specular Lighting
-            float glossy = 256;
-            glm::vec3 view = glm::normalize(closestIntersection.intersectionPoint - cameraPosition);
-            glm::vec3 reflectionVector = lightDirection - (2.0f * normal * glm::dot(normal, lightDirection));
-            float sL = glm::pow(glm::dot(reflectionVector, view), glossy);
-
-            // Calculate pixel brightness
-            // Add all type of light
-            canvasPoint.brightness = pL + sL + ambient;
-
-            // Draw colour
-            Colour colour = closestIntersection.intersectedTriangle.colour;
-            float red = std::min((float(colour.red) * canvasPoint.brightness), 255.0f);
-            float green = std::min((float(colour.green) * canvasPoint.brightness), 255.0f);
-            float blue = std::min((float(colour.blue) * canvasPoint.brightness), 255.0f);
-
-            if (closestIntersection.triangleIndex != lightIntersection.triangleIndex) {
-                // Hard shadow
-                red = red * ambient;
-                green = green * ambient;
-                blue = blue * ambient;
-            }
-
-            // Set the point not in the ball is black
-            if(closestIntersection.intersectionPoint == glm::vec3(0, 0, 0)) {
-                red = 0;
-                green = 0;
-                blue = 0;
-            }
-            uint32_t c = (255 << 24) + (int(round(red)) << 16) + (int(round(green)) << 8) + (int(round(blue)));
-            window.setPixelColour(x, y, c);
-        }
-    }
-}
-
-
 // ---------------------- Setting ---------------------- //
 glm::vec3 cameraPosition (0.0, 0.0, 4.0);
 glm::vec3 lightPosition (0.0, 0.6, 0.3);
@@ -1515,6 +1186,8 @@ float focalLength = 2.0;
 bool orbitYes = false;
 bool rasterisedRenderYes = false;
 int scene = 0;
+shadow shadowType = HARD;
+shading shadeType = FLAT;
 
 // ---------------------- Box Model ---------------------- //
 std::vector<ModelTriangle> modelTriangles = objReader("textured-cornell-box.obj", "textured-cornell-box.mtl", 0.35);
@@ -1531,132 +1204,90 @@ void handleEvent(SDL_Event event, DrawingWindow &window) {
             window.clearPixels();
             clearDepthBuffer();
             cameraPosition = moveCamera(event, cameraPosition);
-            if (scene == 3){
-                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,50, lightPower, ambient, textureMap);
-            } else if (scene == 2){
-                rayTraceWithHardShadow(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50);
-            } else if (scene == 4){
+            if (scene == 4){
                 drawSphereWithFlatShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition,focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
             } else if (scene == 5){
                 drawSphereWithGourandShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition, focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
             } else if (scene == 6){
                 drawSphereWithPhoneShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition, focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
-            } else if (scene == 1){
-                rayTrace(window, modelTriangles, cameraPosition, cameraOrientation, focalLength, 50);
-            } else if (scene == 7){
-                gourandShading(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50, lightPower, ambient);
-            } else if (scene == 8){
-                phoneShading(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50, lightPower, ambient);
+            } else {
+                rayTrace(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,
+                         float(HEIGHT) * 2 / 3, lightPower, ambient, textureMap, shadowType, shadeType);
             }
         } else if(event.key.keysym.sym == SDLK_RIGHT) {
             std::cout << "RIGHT" << std::endl;
             window.clearPixels();
             clearDepthBuffer();
             cameraPosition = moveCamera(event, cameraPosition);
-            if (scene == 3){
-                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,50, lightPower, ambient, textureMap);
-            } else if (scene == 2){
-                rayTraceWithHardShadow(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50);
-            } else if (scene == 4){
+            if (scene == 4){
                 drawSphereWithFlatShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition,focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
             } else if (scene == 5){
                 drawSphereWithGourandShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition, focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
             } else if (scene == 6){
                 drawSphereWithPhoneShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition, focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
-            } else if (scene == 1){
-                rayTrace(window, modelTriangles, cameraPosition, cameraOrientation, focalLength, 50);
-            } else if (scene == 7){
-                gourandShading(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50, lightPower, ambient);
-            } else if (scene == 8){
-                phoneShading(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50, lightPower, ambient);
+            } else {
+                rayTrace(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,
+                         float(HEIGHT) * 2 / 3, lightPower, ambient, textureMap, shadowType, shadeType);
             }
         } else if(event.key.keysym.sym == SDLK_UP) {
             std::cout << "UP" << std::endl;
             window.clearPixels();
             clearDepthBuffer();
             cameraPosition = moveCamera(event, cameraPosition);
-            if (scene == 3){
-                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,50, lightPower, ambient, textureMap);
-            } else if (scene == 2){
-                rayTraceWithHardShadow(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50);
-            } else if (scene == 4){
+            if (scene == 4){
                 drawSphereWithFlatShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition,focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
             } else if (scene == 5){
                 drawSphereWithGourandShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition, focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
             } else if (scene == 6){
                 drawSphereWithPhoneShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition, focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
-            } else if (scene == 1){
-                rayTrace(window, modelTriangles, cameraPosition, cameraOrientation, focalLength, 50);
-            } else if (scene == 7){
-                gourandShading(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50, lightPower, ambient);
-            } else if (scene == 8){
-                phoneShading(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50, lightPower, ambient);
+            } else {
+                rayTrace(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,
+                         float(HEIGHT) * 2 / 3, lightPower, ambient, textureMap, shadowType, shadeType);
             }
         } else if(event.key.keysym.sym == SDLK_DOWN) {
             std::cout << "DOWN" << std::endl;
             window.clearPixels();
             clearDepthBuffer();
             cameraPosition = moveCamera(event, cameraPosition);
-            if (scene == 3){
-                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,50, lightPower, ambient, textureMap);
-            } else if (scene == 2){
-                rayTraceWithHardShadow(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50);
-            } else if (scene == 4){
+            if (scene == 4){
                 drawSphereWithFlatShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition,focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
             } else if (scene == 5){
                 drawSphereWithGourandShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition, focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
             } else if (scene == 6){
                 drawSphereWithPhoneShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition, focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
-            } else if (scene == 1){
-                rayTrace(window, modelTriangles, cameraPosition, cameraOrientation, focalLength, 50);
-            } else if (scene == 7){
-                gourandShading(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50, lightPower, ambient);
-            } else if (scene == 8){
-                phoneShading(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50, lightPower, ambient);
+            } else {
+                rayTrace(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,
+                         float(HEIGHT) * 2 / 3, lightPower, ambient, textureMap, shadowType, shadeType);
             }
         } else if(event.key.keysym.sym == SDLK_f) {
             std::cout << "FORWARD" << std::endl;
             window.clearPixels();
             clearDepthBuffer();
             cameraPosition = moveCamera(event, cameraPosition);
-            if (scene == 3){
-                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,50, lightPower, ambient, textureMap);
-            } else if (scene == 2){
-                rayTraceWithHardShadow(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50);
-            } else if (scene == 4){
+            if (scene == 4){
                 drawSphereWithFlatShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition,focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
             } else if (scene == 5){
                 drawSphereWithGourandShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition, focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
             } else if (scene == 6){
                 drawSphereWithPhoneShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition, focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
-            } else if (scene == 1){
-                rayTrace(window, modelTriangles, cameraPosition, cameraOrientation, focalLength, 50);
-            } else if (scene == 7){
-                gourandShading(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50, lightPower, ambient);
-            } else if (scene == 8){
-                phoneShading(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50, lightPower, ambient);
+            } else {
+                rayTrace(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,
+                         float(HEIGHT) * 2 / 3, lightPower, ambient, textureMap, shadowType, shadeType);
             }
         } else if(event.key.keysym.sym == SDLK_b) {
             std::cout << "BACKWARD" << std::endl;
             window.clearPixels();
             clearDepthBuffer();
             cameraPosition = moveCamera(event, cameraPosition);
-            if (scene == 3){
-                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,50, lightPower, ambient, textureMap);
-            } else if (scene == 2){
-                rayTraceWithHardShadow(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50);
-            } else if (scene == 4){
+            if (scene == 4){
                 drawSphereWithFlatShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition,focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
             } else if (scene == 5){
                 drawSphereWithGourandShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition, focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
             } else if (scene == 6){
                 drawSphereWithPhoneShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition, focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
-            } else if (scene == 1){
-                rayTrace(window, modelTriangles, cameraPosition, cameraOrientation, focalLength, 50);
-            } else if (scene == 7){
-                gourandShading(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50, lightPower, ambient);
-            } else if (scene == 8){
-                phoneShading(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50, lightPower, ambient);
+            } else {
+                rayTrace(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,
+                         float(HEIGHT) * 2 / 3, lightPower, ambient, textureMap, shadowType, shadeType);
             }
         } else if(event.key.keysym.sym == SDLK_d) {
             std::cout << "Rotate about X-axis Clockwise" << std::endl;
@@ -1664,22 +1295,15 @@ void handleEvent(SDL_Event event, DrawingWindow &window) {
             clearDepthBuffer();
             cameraPosition = moveCamera(event, cameraPosition);
             cameraOrientation = rotateCameraOrientation(event, cameraOrientation);
-            if (scene == 3){
-                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,50, lightPower, ambient, textureMap);
-            } else if (scene == 2){
-                rayTraceWithHardShadow(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50);
-            } else if (scene == 4){
+            if (scene == 4){
                 drawSphereWithFlatShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition,focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
             } else if (scene == 5){
                 drawSphereWithGourandShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition, focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
             } else if (scene == 6){
                 drawSphereWithPhoneShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition, focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
-            } else if (scene == 1){
-                rayTrace(window, modelTriangles, cameraPosition, cameraOrientation, focalLength, 50);
-            } else if (scene == 7){
-                gourandShading(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50, lightPower, ambient);
-            } else if (scene == 8){
-                phoneShading(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50, lightPower, ambient);
+            } else {
+                rayTrace(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,
+                         float(HEIGHT) * 2 / 3, lightPower, ambient, textureMap, shadowType, shadeType);
             }
         } else if(event.key.keysym.sym == SDLK_a) {
             std::cout << "Rotate about X-axis Anticlockwise" << std::endl;
@@ -1687,22 +1311,15 @@ void handleEvent(SDL_Event event, DrawingWindow &window) {
             clearDepthBuffer();
             cameraPosition = moveCamera(event, cameraPosition);
             cameraOrientation = rotateCameraOrientation(event, cameraOrientation);
-            if (scene == 3){
-                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,50, lightPower, ambient, textureMap);
-            } else if (scene == 2){
-                rayTraceWithHardShadow(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50);
-            } else if (scene == 4){
+            if (scene == 4){
                 drawSphereWithFlatShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition,focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
             } else if (scene == 5){
                 drawSphereWithGourandShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition, focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
             } else if (scene == 6){
                 drawSphereWithPhoneShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition, focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
-            } else if (scene == 1){
-                rayTrace(window, modelTriangles, cameraPosition, cameraOrientation, focalLength, 50);
-            } else if (scene == 7){
-                gourandShading(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50, lightPower, ambient);
-            } else if (scene == 8){
-                phoneShading(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50, lightPower, ambient);
+            } else {
+                rayTrace(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,
+                         float(HEIGHT) * 2 / 3, lightPower, ambient, textureMap, shadowType, shadeType);
             }
         } else if(event.key.keysym.sym == SDLK_w) {
             std::cout << "Rotate about Y-axis Clockwise" << std::endl;
@@ -1710,22 +1327,15 @@ void handleEvent(SDL_Event event, DrawingWindow &window) {
             clearDepthBuffer();
             cameraPosition = moveCamera(event, cameraPosition);
             cameraOrientation = rotateCameraOrientation(event, cameraOrientation);
-            if (scene == 3){
-                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,50, lightPower, ambient, textureMap);
-            } else if (scene == 2){
-                rayTraceWithHardShadow(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50);
-            } else if (scene == 4){
+            if (scene == 4){
                 drawSphereWithFlatShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition,focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
             } else if (scene == 5){
                 drawSphereWithGourandShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition, focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
             } else if (scene == 6){
                 drawSphereWithPhoneShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition, focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
-            } else if (scene == 1){
-                rayTrace(window, modelTriangles, cameraPosition, cameraOrientation, focalLength, 50);
-            } else if (scene == 7){
-                gourandShading(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50, lightPower, ambient);
-            } else if (scene == 8){
-                phoneShading(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50, lightPower, ambient);
+            } else {
+                rayTrace(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,
+                         float(HEIGHT) * 2 / 3, lightPower, ambient, textureMap, shadowType, shadeType);
             }
         } else if(event.key.keysym.sym == SDLK_s) {
             std::cout << "Rotate about Y-axis Anticlockwise" << std::endl;
@@ -1733,39 +1343,38 @@ void handleEvent(SDL_Event event, DrawingWindow &window) {
             clearDepthBuffer();
             cameraPosition = moveCamera(event, cameraPosition);
             cameraOrientation = rotateCameraOrientation(event, cameraOrientation);
-            if (scene == 3){
-                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,50, lightPower, ambient, textureMap);
-            } else if (scene == 2){
-                rayTraceWithHardShadow(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50);
-            } else if (scene == 4){
+            if (scene == 4){
                 drawSphereWithFlatShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition,focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
             } else if (scene == 5){
                 drawSphereWithGourandShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition, focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
             } else if (scene == 6){
                 drawSphereWithPhoneShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition, focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
-            } else if (scene == 1){
-                rayTrace(window, modelTriangles, cameraPosition, cameraOrientation, focalLength, 50);
-            } else if (scene == 7){
-                gourandShading(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50, lightPower, ambient);
-            } else if (scene == 8){
-                phoneShading(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50, lightPower, ambient);
+            } else {
+                rayTrace(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,
+                         float(HEIGHT) * 2 / 3, lightPower, ambient, textureMap, shadowType, shadeType);
             }
         } else if(event.key.keysym.sym == SDLK_1) {
             clearDepthBuffer();
             window.clearPixels();
             scene = 1;
-            rayTrace(window, modelTriangles, cameraPosition, cameraOrientation, focalLength, 50);
+            shadowType = NONE;
+            shadeType = FLAT;
+            rayTrace(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,
+                     float(HEIGHT) * 2 / 3, lightPower, ambient, textureMap, shadowType, shadeType);
         } else if(event.key.keysym.sym == SDLK_2) {
             clearDepthBuffer();
             window.clearPixels();
             scene = 2;
-            rayTraceWithSoftShadow(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50);
-            //rayTraceWithHardShadow(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50);
+            shadowType = SOFT;
+            rayTrace(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,
+                     float(HEIGHT) * 2 / 3, lightPower, ambient, textureMap, shadowType, shadeType);
         } else if(event.key.keysym.sym == SDLK_3) {
             clearDepthBuffer();
             window.clearPixels();
             scene = 3;
-            rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50, lightPower, ambient, textureMap);
+            shadowType = HARD;
+            rayTrace(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,
+                     float(HEIGHT) * 2 / 3, lightPower, ambient, textureMap, shadowType, shadeType);
         } else if(event.key.keysym.sym == SDLK_4) {
             clearDepthBuffer();
             window.clearPixels();
@@ -1780,27 +1389,21 @@ void handleEvent(SDL_Event event, DrawingWindow &window) {
         } else if(event.key.keysym.sym == SDLK_5) {
             clearDepthBuffer();
             window.clearPixels();
-//            cameraPosition = glm::vec3(0.0, 0.7, 5.2);
-//            lightPosition = glm::vec3(-0.3, 1.0, 0.8);
             cameraOrientation = glm::mat3(1, 0, 0, 0, 1, 0, 0, 0, 1);
             lightPower = 4.0f;
             ambient = 0.4;
             focalLength = 2.0;
             scene = 5;
-            //drawSphereWithGourandShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition, focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
-            gourandShading(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50, lightPower, ambient);
+            drawSphereWithGourandShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition, focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
         } else if(event.key.keysym.sym == SDLK_6) {
             clearDepthBuffer();
             window.clearPixels();
-//            cameraPosition = glm::vec3(0.0, 0.7, 5.2);
-//            lightPosition = glm::vec3(-0.3, 1.0, 0.8);
             cameraOrientation = glm::mat3(1, 0, 0, 0, 1, 0, 0, 0, 1);
             lightPower = 4.0f;
             ambient = 0.4;
             focalLength = 2.0;
             scene = 6;
-            //drawSphereWithPhoneShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition, focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
-            phoneShading(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50, lightPower, ambient);
+            drawSphereWithPhoneShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition, focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
         } else if(event.key.keysym.sym == SDLK_x) {
             clearDepthBuffer();
             window.clearPixels();
@@ -1809,7 +1412,9 @@ void handleEvent(SDL_Event event, DrawingWindow &window) {
             ambient = 0.4;
             focalLength = 2.0;
             scene = 7;
-            gourandShading(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50, lightPower, ambient);
+            shadeType = GOURAND;
+            rayTrace(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,
+                     float(HEIGHT) * 2 / 3, lightPower, ambient, textureMap, shadowType, shadeType);
         } else if(event.key.keysym.sym == SDLK_z) {
             clearDepthBuffer();
             window.clearPixels();
@@ -1818,196 +1423,148 @@ void handleEvent(SDL_Event event, DrawingWindow &window) {
             ambient = 0.4;
             focalLength = 2.0;
             scene = 8;
-            phoneShading(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50, lightPower, ambient);
+            shadeType = PHONG;
+            rayTrace(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,
+                     float(HEIGHT) * 2 / 3, lightPower, ambient, textureMap, shadowType, shadeType);
         } else if(event.key.keysym.sym == SDLK_i) {
             std::cout << "Light UP" << std::endl;
             window.clearPixels();
             lightPosition = moveLight(event, lightPosition);
-            if (scene == 3){
-                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,50, lightPower, ambient, textureMap);
-            } else if (scene == 2){
-                rayTraceWithHardShadow(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50);
-            } else if (scene == 4){
+            if (scene == 4){
                 drawSphereWithFlatShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition,focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
             } else if (scene == 5){
                 drawSphereWithGourandShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition, focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
             } else if (scene == 6){
                 drawSphereWithPhoneShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition, focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
-            } else if (scene == 7){
-                gourandShading(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50, lightPower, ambient);
-            } else if (scene == 8){
-                phoneShading(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50, lightPower, ambient);
+            } else {
+                rayTrace(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,
+                         float(HEIGHT) * 2 / 3, lightPower, ambient, textureMap, shadowType, shadeType);
             }
         } else if(event.key.keysym.sym == SDLK_k) {
             std::cout << "Light DOWN" << std::endl;
             window.clearPixels();
             lightPosition = moveLight(event, lightPosition);
-            if (scene == 3){
-                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,50, lightPower, ambient, textureMap);
-            } else if (scene == 2){
-                rayTraceWithHardShadow(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50);
-            } else if (scene == 4){
+            if (scene == 4){
                 drawSphereWithFlatShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition,focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
             } else if (scene == 5){
                 drawSphereWithGourandShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition, focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
             } else if (scene == 6){
                 drawSphereWithPhoneShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition, focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
-            } else if (scene == 7){
-                gourandShading(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50, lightPower, ambient);
-            } else if (scene == 8){
-                phoneShading(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50, lightPower, ambient);
+            } else {
+                rayTrace(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,
+                         float(HEIGHT) * 2 / 3, lightPower, ambient, textureMap, shadowType, shadeType);
             }
         } else if(event.key.keysym.sym == SDLK_j) {
             std::cout << "Light LEFT" << std::endl;
             window.clearPixels();
             lightPosition = moveLight(event, lightPosition);
-            if (scene == 3){
-                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,50, lightPower, ambient, textureMap);
-            } else if (scene == 2){
-                rayTraceWithHardShadow(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50);
-            } else if (scene == 4){
+            if (scene == 4){
                 drawSphereWithFlatShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition,focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
             } else if (scene == 5){
                 drawSphereWithGourandShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition, focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
             } else if (scene == 6){
                 drawSphereWithPhoneShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition, focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
-            } else if (scene == 7){
-                gourandShading(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50, lightPower, ambient);
-            } else if (scene == 8){
-                phoneShading(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50, lightPower, ambient);
+            } else {
+                rayTrace(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,
+                         float(HEIGHT) * 2 / 3, lightPower, ambient, textureMap, shadowType, shadeType);
             }
         } else if(event.key.keysym.sym == SDLK_l) {
             std::cout << "Light RIGHT" << std::endl;
             window.clearPixels();
             lightPosition = moveLight(event, lightPosition);
-            if (scene == 3){
-                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,50, lightPower, ambient, textureMap);
-            } else if (scene == 2){
-                rayTraceWithHardShadow(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50);
-            } else if (scene == 4){
+            if (scene == 4){
                 drawSphereWithFlatShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition,focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
             } else if (scene == 5){
                 drawSphereWithGourandShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition, focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
             } else if (scene == 6){
                 drawSphereWithPhoneShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition, focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
-            } else if (scene == 7){
-                gourandShading(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50, lightPower, ambient);
-            } else if (scene == 8){
-                phoneShading(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50, lightPower, ambient);
+            } else {
+                rayTrace(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,
+                         float(HEIGHT) * 2 / 3, lightPower, ambient, textureMap, shadowType, shadeType);
             }
         } else if(event.key.keysym.sym == SDLK_m) {
             std::cout << "Light FORWARD" << std::endl;
             window.clearPixels();
             lightPosition = moveLight(event, lightPosition);
-            if (scene == 3){
-                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,50, lightPower, ambient, textureMap);
-            } else if (scene == 2){
-                rayTraceWithHardShadow(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50);
-            } else if (scene == 4){
+            if (scene == 4){
                 drawSphereWithFlatShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition,focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
             } else if (scene == 5){
                 drawSphereWithGourandShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition, focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
             } else if (scene == 6){
                 drawSphereWithPhoneShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition, focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
-            } else if (scene == 7){
-                gourandShading(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50, lightPower, ambient);
-            } else if (scene == 8){
-                phoneShading(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50, lightPower, ambient);
+            } else {
+                rayTrace(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,
+                         float(HEIGHT) * 2 / 3, lightPower, ambient, textureMap, shadowType, shadeType);
             }
         } else if(event.key.keysym.sym == SDLK_n) {
             std::cout << "Light BACKWARD" << std::endl;
             window.clearPixels();
             lightPosition = moveLight(event, lightPosition);
-            if (scene == 3){
-                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,50, lightPower, ambient, textureMap);
-            } else if (scene == 2){
-                rayTraceWithHardShadow(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50);
-            } else if (scene == 4){
+            if (scene == 4){
                 drawSphereWithFlatShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition,focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
             } else if (scene == 5){
                 drawSphereWithGourandShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition, focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
             } else if (scene == 6){
                 drawSphereWithPhoneShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition, focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
-            } else if (scene == 7){
-                gourandShading(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50, lightPower, ambient);
-            } else if (scene == 8){
-                phoneShading(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50, lightPower, ambient);
+            } else {
+                rayTrace(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,
+                         float(HEIGHT) * 2 / 3, lightPower, ambient, textureMap, shadowType, shadeType);
             }
         } else if(event.key.keysym.sym == SDLK_9) {
             std::cout << "Plus power" << std::endl;
             window.clearPixels();
             lightPower = lightPower + 1.0f;
-            if (scene == 3){
-                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,50, lightPower, ambient, textureMap);
-            } else if (scene == 2){
-                rayTraceWithHardShadow(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50);
-            } else if (scene == 4){
+            if (scene == 4){
                 drawSphereWithFlatShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition,focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
             } else if (scene == 5){
                 drawSphereWithGourandShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition, focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
             } else if (scene == 6){
                 drawSphereWithPhoneShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition, focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
-            } else if (scene == 7){
-                gourandShading(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50, lightPower, ambient);
-            } else if (scene == 8){
-                phoneShading(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50, lightPower, ambient);
+            } else {
+                rayTrace(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,
+                         float(HEIGHT) * 2 / 3, lightPower, ambient, textureMap, shadowType, shadeType);
             }
         } else if(event.key.keysym.sym == SDLK_0) {
             std::cout << "Minus power" << std::endl;
             window.clearPixels();
             lightPower = lightPower - 1.0f;
-            if (scene == 3){
-                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,50, lightPower, ambient, textureMap);
-            } else if (scene == 2){
-                rayTraceWithHardShadow(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50);
-            } else if (scene == 4){
+            if (scene == 4){
                 drawSphereWithFlatShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition,focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
             } else if (scene == 5){
                 drawSphereWithGourandShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition, focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
             } else if (scene == 6){
                 drawSphereWithPhoneShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition, focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
-            } else if (scene == 7){
-                gourandShading(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50, lightPower, ambient);
-            } else if (scene == 8){
-                phoneShading(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50, lightPower, ambient);
+            } else {
+                rayTrace(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,
+                         float(HEIGHT) * 2 / 3, lightPower, ambient, textureMap, shadowType, shadeType);
             }
         } else if(event.key.keysym.sym == SDLK_7) {
             std::cout << "Plus ambient power" << std::endl;
             window.clearPixels();
             ambient = ambient + 0.1f;
-            if (scene == 3){
-                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,50, lightPower, ambient, textureMap);
-            } else if (scene == 2){
-                rayTraceWithHardShadow(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50);
-            } else if (scene == 4){
+            if (scene == 4){
                 drawSphereWithFlatShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition,focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
             } else if (scene == 5){
                 drawSphereWithGourandShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition, focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
             } else if (scene == 6){
                 drawSphereWithPhoneShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition, focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
-            } else if (scene == 7){
-                gourandShading(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50, lightPower, ambient);
-            } else if (scene == 8){
-                phoneShading(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50, lightPower, ambient);
+            } else {
+                rayTrace(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,
+                         float(HEIGHT) * 2 / 3, lightPower, ambient, textureMap, shadowType, shadeType);
             }
         } else if(event.key.keysym.sym == SDLK_8) {
             std::cout << "Minus ambient power" << std::endl;
             window.clearPixels();
             ambient = ambient - 0.1f;
-            if (scene == 3){
-                rayTraceWithLighting(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,50, lightPower, ambient, textureMap);
-            } else if (scene == 2){
-                rayTraceWithHardShadow(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50);
-            } else if (scene == 4){
+            if (scene == 4){
                 drawSphereWithFlatShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition,focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
             } else if (scene == 5){
                 drawSphereWithGourandShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition, focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
             } else if (scene == 6){
                 drawSphereWithPhoneShading(window, sphereModel, cameraPosition, cameraOrientation, lightPosition, focalLength, float(HEIGHT) * 2 / 3, lightPower, ambient);
-            } else if (scene == 7){
-                gourandShading(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50, lightPower, ambient);
-            } else if (scene == 8){
-                phoneShading(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength, 50, lightPower, ambient);
+            } else {
+                rayTrace(window, modelTriangles, cameraPosition, cameraOrientation, lightPosition, focalLength,
+                         float(HEIGHT) * 2 / 3, lightPower, ambient, textureMap, shadowType, shadeType);
             }
         } else if(event.key.keysym.sym == SDLK_u) {
             CanvasPoint point1, point2, point3;
