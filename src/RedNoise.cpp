@@ -257,7 +257,7 @@ uint32_t textureMapper(CanvasTriangle triangle, CanvasPoint point, TextureMap te
 
 uint32_t modelTextureMapper(float alpha, float beta, float gamma, ModelTriangle triangle, TextureMap textureMap){
     // Get texture point
-    CanvasPoint texturePoint((alpha * triangle.texturePoints[0].x * float(textureMap.width) + beta * triangle.texturePoints[1].x * float(textureMap.width) + gamma * triangle.texturePoints[2].x * float(textureMap.width)), (alpha * triangle.texturePoints[0].y * float(textureMap.height) + beta * triangle.texturePoints[1].y * float(textureMap.height) + gamma * triangle.texturePoints[2].y * float(textureMap.height)));
+    CanvasPoint texturePoint(round(alpha * triangle.texturePoints[0].x * float(textureMap.width) + beta * triangle.texturePoints[1].x * float(textureMap.width) + gamma * triangle.texturePoints[2].x * float(textureMap.width)), round(alpha * triangle.texturePoints[0].y * float(textureMap.height) + beta * triangle.texturePoints[1].y * float(textureMap.height) + gamma * triangle.texturePoints[2].y * float(textureMap.height)));
     // Locate the texture point position in texture map pixel list
     int index = int(texturePoint.y) * int(textureMap.width) + int(texturePoint.x);
     uint32_t colour = textureMap.pixels[index - 1];
@@ -346,6 +346,50 @@ void drawTextureTriangle(DrawingWindow &window, const TextureMap& textureMap, Ca
 }
 
 // ---------------------- Week 4 ---------------------- //
+glm::vec3 calculateSphereCentre(const glm::vec3 p1, const glm::vec3 p2, const glm::vec3 p3, const glm::vec3 p4) {
+    std::cout << p1.x << " " << p1.y << " " << p1.z << std::endl;
+    std::cout << p2.x << " " << p2.y << " " << p2.z << std::endl;
+    std::cout << p3.x << " " << p3.y << " " << p3.z << std::endl;
+    std::cout << p4.x << " " << p4.y << " " << p4.z << std::endl;
+
+    glm::vec3 centre(0, 0, 0);
+    float a = p1[0] - p2[0], b = p1[1] - p2[1], c = p1[2] - p2[2];
+    float a1 = p3[0] - p4[0], b1 = p3[1] - p4[1], c1 = p3[2] - p3[2];
+    float a2 = p2[0] - p3[0], b2 = p2[1] - p3[1], c2 = p2[2] - p3[2];
+    float A = p1[0] * p1[0] - p2[0] * p2[0];
+    float B = p1[1] * p1[1] - p2[1] * p2[1];
+    float C = p1[2] * p1[2] - p2[2] * p2[2];
+    float A1 = p3[0] * p3[0] - p4[0] * p4[0];
+    float B1 = p3[1] * p3[1] - p4[1] * p4[1];
+    float C1 = p3[2] * p3[2] - p4[2] * p4[2];
+    float A2 = p2[0] * p2[0] - p3[0] * p3[0];
+    float B2 = p2[1] * p2[1] - p3[1] * p3[1];
+    float C2 = p2[2] * p2[2] - p3[2] * p3[2];
+    float P = (A + B + C) / 2;
+    float Q = (A1 + B1 + C1) / 2;
+    float R = (A2 + B2 + C2) / 2;
+
+    float D = a * b1 * c2 + a2 * b * c1 + c * a1 * b2 - (a2 * b1 * c + a1 * b * c2 + a * b2 * c1);
+    float Dx = P * b1 * c2 + b * c1 * R + c * Q * b2 - (c * b1 * R + P * c1 * b2 + Q * b * c2);
+    float Dy = a * Q * c2 + P * c1 * a2 + c * a1 * R - (c * Q * a2 + a * c1 * R + c2 * P * a1);
+    float Dz = a * b1 * R + b * Q * a2 + P * a1 * b2 - (a2 * b1 * P + a * Q * b2 + R * b * a1);
+
+    if (D == 0) {
+        return centre;
+    } else {
+        centre.x = Dx / D;
+        centre.y = Dy / D;
+        centre.z = Dz / D;
+        return centre;
+    }
+}
+
+float calculateRadius(glm::vec3 p1, glm::vec3 centre){
+    return sqrt((p1[0]-centre[0])*(p1[0]-centre[0]) +
+                (p1[1]-centre[1])*(p1[1]-centre[1]) +
+                (p1[2]-centre[2])*(p1[2]-centre[2]));
+}
+
 // Convert mtl colours to packed integer colours
 Colour mtlConverter(double r, double g, double b) {
     Colour packedColour = Colour(int(r*255), int(g*255), int(b*255));
@@ -455,8 +499,14 @@ std::vector<ModelTriangle> objReader(const std::string& objFile, const std::stri
     return modelTriangles;
 }
 
+glm::vec3 sphereCenter (0, 0, 0);
+TextureMap Lunar = TextureMap("Venus.ppm");
+TextureMap Logo = TextureMap("texture_cw.ppm");
+float sphereRadius = 0;
+
 std::vector<ModelTriangle> objReader2(const std::vector<std::string>& objFiles, const std::vector<std::string>& mtlFiles, float scalingFactor) {
     std::vector<ModelTriangle> modelTriangles;
+    std::vector<glm::vec3> sphereVertex;
     for(const std::string& objFile : objFiles) {
         for(const std::string& mtlFile : mtlFiles) {
             std::vector<glm::vec3> vertex;
@@ -483,7 +533,7 @@ std::vector<ModelTriangle> objReader2(const std::vector<std::string>& objFiles, 
                     TexturePoint vt = TexturePoint(std::stof(text[1]), std::stof(text[2]));
                     textureVertex.push_back(vt);
                 } else if(text[0] == "f") {
-                    if(colourName == "Cobbles") {
+                    if(colourName == "Cobbles" || objFile == "logo.obj") {
                         std::vector<std::string> faceVertex;
                         std::vector<std::string> faceTextureVertex;
                         for(int i = 1; i < 4; i++) {
@@ -517,7 +567,7 @@ std::vector<ModelTriangle> objReader2(const std::vector<std::string>& objFiles, 
                 if(mtlFile != "null") {
                     triangle.colour = colourMap[i[3]];
                     triangle.colour.name = i[3];
-                    if(triangle.colour.name == "Cobbles") {
+                    if(triangle.colour.name == "Cobbles" || objFile == "logo.obj") {
                         TexturePoint vt0 = textureVertex[std::stoi(i[4])-1];
                         TexturePoint vt1 = textureVertex[std::stoi(i[5])-1];
                         TexturePoint vt2 = textureVertex[std::stoi(i[6])-1];
@@ -525,15 +575,30 @@ std::vector<ModelTriangle> objReader2(const std::vector<std::string>& objFiles, 
                     }
                 }
                 if(objFile == "sphere.obj") {
-                    glm::vec3 moment {1.5, 3.265, 0};
+                    glm::vec3 movement {0.5, 1.134, 0};
+                    //glm::vec3 movement {-1, 1.6, 0};
                     triangle.colour = Colour(255, 165, 0);
                     triangle.colour.name = "Orange";
-                    v0 = v0 - moment;
-                    v1 = v1 - moment;
-                    v2 = v2 - moment;
+                    v0 = v0*scalingFactor - movement;
+                    v1 = v1*scalingFactor - movement;
+                    v2 = v2*scalingFactor - movement;
+                    sphereVertex.push_back(v0);
+                    sphereVertex.push_back(v1);
+                    sphereVertex.push_back(v2);
+                } else if(objFile == "logo.obj") {
+                    glm::vec3 movement {-0.2, 0, 1};
+                    triangle.colour = Colour(128, 64, 0);
+                    triangle.colour.name = "Brown";
+                    v0 = (v0/250.0f)*scalingFactor - movement;
+                    v1 = (v1/250.0f)*scalingFactor - movement;
+                    v2 = (v2/250.0f)*scalingFactor - movement;
+                } else {
+                    v0 = v0*scalingFactor;
+                    v1 = v1*scalingFactor;
+                    v2 = v2*scalingFactor;
                 }
 
-                triangle.vertices = {v0*scalingFactor, v1*scalingFactor, v2*scalingFactor};
+                triangle.vertices = {v0, v1, v2};
                 // normal
                 triangle.normal = glm::normalize(glm::cross((triangle.vertices[2] - triangle.vertices[0]), (triangle.vertices[1] - triangle.vertices[0])));
                 modelTriangles.push_back(triangle);
@@ -541,6 +606,11 @@ std::vector<ModelTriangle> objReader2(const std::vector<std::string>& objFiles, 
             break;
         }
     }
+    // calculate sphere sphereCenter and radius
+    sphereCenter = calculateSphereCentre(sphereVertex[3], sphereVertex[10], sphereVertex[20], sphereVertex[30]);
+    sphereRadius = calculateRadius(sphereVertex[0], sphereCenter);
+    std::cout << sphereCenter.x << " " << sphereCenter.y << " " << sphereCenter.z << std::endl;
+    std::cout << sphereRadius << std::endl;
     return modelTriangles;
 }
 
@@ -672,22 +742,33 @@ glm::mat3 lookAt(glm::vec3 cameraPosition) {
 }
 
 // ---------------------- Week 6 ---------------------- //
-std::vector<glm::vec3> multiLightPosition(glm::vec3 center) {
-    std::vector<glm::vec3> lightPositions;
-    float i = -0.2f;
-    for(;;) {
-        if(i > 0.2f) { break;}
-        float j = -0.2f;
-        for(;;) {
-            if(j > 0.2f) { break;}
-            lightPositions.emplace_back(center.x+i, center.y, center.z+j);
-            // std::cout << center.x+i << " " << center.y << " " << center.z+j << std::endl;
-            // std::cout << i << " " << j << std::endl;
-            j = j + 0.01f;
+//std::vector<glm::vec3> multiLightPosition(glm::vec3 sphereCenter) {
+//    std::vector<glm::vec3> lightPositions;
+//    float i = -0.2f;
+//    for(;;) {
+//        if(i > 0.2f) { break;}
+//        float j = -0.2f;
+//        for(;;) {
+//            if(j > 0.2f) { break;}
+//            lightPositions.emplace_back(sphereCenter.x+i, sphereCenter.y, sphereCenter.z+j);
+//            j = j + 0.02f;
+//        }
+//        i = i + 0.02f;
+//    }
+//    return lightPositions;
+//}
+//
+std::vector<glm::vec3> multiLightPosition(glm::vec3 lightCenterPoint) {
+    int radius = 10;
+    float spread = 0.05;
+    std::vector<glm::vec3> lightPoints;
+    for (int i = -radius; i <= radius; i++) {
+        for (int j = -radius; j <= radius; j++) {
+            if (std::abs(j) + std::abs(i) <= radius)
+                lightPoints.push_back(glm::vec3(lightCenterPoint.x + float(i) * spread, lightCenterPoint.y, lightCenterPoint.z + float(j) * spread));
         }
-        i = i + 0.01f;
     }
-    return lightPositions;
+    return lightPoints;
 }
 
 glm::vec3 get3DPoint(CanvasPoint point, glm::vec3 cameraPosition, glm::mat3 cameraOrientation, float focalLength, float scalingFactor) {
@@ -766,21 +847,39 @@ glm::vec3 vertexNormalCalculator(glm::vec3 vertex, const std::vector<ModelTriang
 
 glm::vec3 getRefractionDirection(float air, float glass, glm::vec3 incidenceRay, glm::vec3 normal) {
     glm::vec3 direction (0, 0, 0);
-    auto incidenceAngle = glm::clamp<float>(glm::dot(incidenceRay, normal), -1.0f, 1.0f);
+    auto incidenceAngle = glm::dot(incidenceRay, normal);
     float eta = 0.0f;
     float k = 0.0f;
     if(incidenceAngle > 0) {
-        eta = glass / air;
+        eta = air / glass;
         normal = -normal;
     } else {
-        eta = air / glass;
+        eta = glass / air;
     }
     k = 1 - eta * eta * (1 - abs(incidenceAngle) * abs(incidenceAngle));
     if(k < 0){
         return direction;
     }
-    direction = glm::normalize(incidenceRay*eta + normal * (eta * incidenceAngle - sqrt(k)));
+    direction = glm::normalize(incidenceRay*eta + normal * (eta * abs(incidenceAngle) - sqrt(k)));
     return direction;
+}
+
+glm::vec4 refractionDirection(glm::vec3 incident, glm::vec3 normal, float refractiveIndex) {
+    float incidentAngle = dot(incident, normal);
+    float v1 = 1, v2 = refractiveIndex;
+    float c = v1 / v2;
+    if (incidentAngle > 0){
+        c = 1 / c;
+        normal = -normal;
+    }
+
+    float cosTheta = abs(incidentAngle);
+
+    float k = 1 - c * c * (1 - cosTheta * cosTheta);
+    if (k < 0) return {0,0,0,0};
+    glm::vec3 refracted = glm::normalize(incident * c + normal * (c * cosTheta - sqrtf(k)));
+
+    return {refracted[0], refracted[1], refracted[2], sign(incidentAngle)};
 }
 
 float fresnel(glm::vec3 incident, glm::vec3 normal, float refractiveIndex) {
@@ -803,10 +902,9 @@ float fresnel(glm::vec3 incident, glm::vec3 normal, float refractiveIndex) {
         float Rp = ((etai * cosi) - (etat * cost)) / ((etai * cosi) + (etat * cost));
         return (Rs * Rs + Rp * Rp) * 0.5f;
     }
-    return 0;
 }
 
-Colour castRay(glm::vec3 cameraPosition, glm::vec3 lightPosition, glm::vec3 rayDirection, const std::vector<ModelTriangle>& modelTriangles, float lightPower, float ambient, const TextureMap& textureMap, int index, shadow shadowType, shading shadeType) {
+Colour castRay(glm::vec3 cameraPosition, glm::vec3 lightPosition, const std::vector<glm::vec3>& lightPositions, glm::vec3 rayDirection, const std::vector<ModelTriangle>& modelTriangles, float lightPower, float ambient, const TextureMap& textureMap, int index, shadow shadowType, shading shadeType) {
     if(index >= 5) {
         return {255, 255, 255};
     }
@@ -825,11 +923,10 @@ Colour castRay(glm::vec3 cameraPosition, glm::vec3 lightPosition, glm::vec3 rayD
     // Draw colour
     Colour colour = closestIntersection.intersectedTriangle.colour;
 
-    // Mirror
-    if (closestIntersection.intersectedTriangle.colour.name == "Yellow") {
+    if(closestIntersection.intersectedTriangle.colour.name == "Magenta") {
         glm::vec3 reflectionRay = glm::normalize(rayDirection - (2.0f * closestIntersection.intersectedTriangle.normal * glm::dot(rayDirection, closestIntersection.intersectedTriangle.normal)));
-        return castRay(closestIntersection.intersectionPoint, lightPosition, reflectionRay, modelTriangles, lightPower, ambient, textureMap, index+1,shadowType, shadeType);
-    } else if (closestIntersection.intersectedTriangle.colour.name == "Cobbles") {
+        return castRay(closestIntersection.intersectionPoint, lightPosition, lightPositions, reflectionRay, modelTriangles, lightPower, ambient, textureMap, index+1,shadowType, shadeType);
+    } else if(closestIntersection.intersectedTriangle.colour.name == "Cobbles") {
         float alpha = ((-(point.x - v1.x) * (v2.y - v1.y) + (point.y - v1.y) * (v2.x - v1.x)) /
                        (-(v0.x - v1.x) * (v2.y - v1.y) + (v0.y - v1.y) * (v2.x - v1.x))) / abs(v0.z);
         float beta = ((-(point.x - v2.x) * (v0.y - v2.y) + (point.y - v2.y) * (v0.x - v2.x)) /
@@ -839,25 +936,49 @@ Colour castRay(glm::vec3 cameraPosition, glm::vec3 lightPosition, glm::vec3 rayD
         colour.blue = int((c) & 0xff);
         colour.green = int((c >> 8) & 0xff);
         colour.red = int((c >> 16) & 0xff);
-    } else if (closestIntersection.intersectedTriangle.colour.name == "Blue") {
-        glm::vec3 refractDirection = getRefractionDirection(1.0f, 1.3f, rayDirection, closestIntersection.intersectedTriangle.normal);
-        glm::vec3 updatePoint = closestIntersection.intersectionPoint;
-        if(glm::dot(rayDirection, closestIntersection.intersectedTriangle.normal) < 0.0f){
-            updatePoint = point - closestIntersection.intersectedTriangle.normal * float(0.0001);
-        } else {
-            updatePoint = point + closestIntersection.intersectedTriangle.normal * float(0.0001);
-        }
+    } else if(closestIntersection.intersectedTriangle.colour.name == "Red") {
+        //glm::vec3 refractDirection = getRefractionDirection(1.0f, 1.3f, rayDirection, closestIntersection.intersectedTriangle.normal);
+        glm::vec4 refractionD = refractionDirection(rayDirection, closestIntersection.intersectedTriangle.normal, 1.3f);
+        glm::vec3 refractDirection (refractionD[0], refractionD[1], refractionD[2]);
         glm::vec3 reflectionRay = glm::normalize(rayDirection - (2.0f * closestIntersection.intersectedTriangle.normal * glm::dot(rayDirection, closestIntersection.intersectedTriangle.normal)));
-        Colour reflectionColour = castRay(closestIntersection.intersectionPoint, lightPosition, reflectionRay, modelTriangles, lightPower, ambient, textureMap, index+1, shadowType, shadeType);
-        Colour refractionColour = castRay(updatePoint, lightPosition, refractDirection, modelTriangles, lightPower, ambient, textureMap, index+1, shadowType, shadeType);
+        Colour reflectionColour = castRay(closestIntersection.intersectionPoint, lightPosition, lightPositions, reflectionRay, modelTriangles, lightPower, ambient, textureMap, index+1, shadowType, shadeType);
+        glm::vec3 updatePoint = closestIntersection.intersectionPoint;
+        if(refractionD[3] == -1){
+            updatePoint = point - (closestIntersection.intersectedTriangle.normal * float(0.0001));
+        } else {
+            updatePoint = point + (closestIntersection.intersectedTriangle.normal * float(0.0001));
+        }
+        Colour refractionColour = castRay(updatePoint, lightPosition, lightPositions, refractDirection, modelTriangles, lightPower, ambient, textureMap, index+1, shadowType, shadeType);
         float reflectiveConstant = fresnel(rayDirection, closestIntersection.intersectedTriangle.normal, 1.3f);
         float refractiveConstant = 1 - reflectiveConstant;
 
         Colour mixColour;
-        mixColour.red = int(round((reflectiveConstant * float(reflectionColour.red)) + (refractiveConstant * float(refractionColour.red))));
-        mixColour.green = int(round((reflectiveConstant * float(reflectionColour.green)) + (refractiveConstant * float(refractionColour.green))));
-        mixColour.blue = int(round((reflectiveConstant * float(reflectionColour.blue)) + (refractiveConstant * float(refractionColour.blue))));
+        mixColour.red = int(reflectiveConstant * float(reflectionColour.red) + (refractiveConstant * float(refractionColour.red)));
+        mixColour.green = int(reflectiveConstant * float(reflectionColour.green) + (refractiveConstant * float(refractionColour.green)));
+        mixColour.blue = int(reflectiveConstant * float(reflectionColour.blue) + (refractiveConstant * float(refractionColour.blue)));
         return mixColour;
+    } else if(closestIntersection.intersectedTriangle.colour.name == "Orange") {
+        glm::vec3 spherePoint = (point - sphereCenter) / sphereRadius;
+        float phi = atan2(spherePoint.z, spherePoint.x);
+        float theta = asin(spherePoint.y);
+        float x = 1.0f - ((phi+PI) / (2*PI));
+        float y = (theta + PI/2) / PI;
+        int i = std::max(std::min(int((x * float(Lunar.width))-1), int(Lunar.width-1)), 0);
+        int j = std::max(std::min((int((1-y) * float(Lunar.height) - 0.001f)), int(Lunar.height-1)), 0);
+        uint32_t c = Lunar.pixels[i + j * int(Lunar.width)];
+        colour.blue = int((c) & 0xff);
+        colour.green = int((c >> 8) & 0xff);
+        colour.red = int((c >> 16) & 0xff);
+    } else if(closestIntersection.intersectedTriangle.colour.name == "Brown") {
+        float alpha = ((-(point.x - v1.x) * (v2.y - v1.y) + (point.y - v1.y) * (v2.x - v1.x)) /
+                       (-(v0.x - v1.x) * (v2.y - v1.y) + (v0.y - v1.y) * (v2.x - v1.x))) / abs(v0.z);
+        float beta = ((-(point.x - v2.x) * (v0.y - v2.y) + (point.y - v2.y) * (v0.x - v2.x)) /
+                      (-(v1.x - v2.x) * (v0.y - v2.y) + (v1.y - v2.y) * (v0.x - v2.x))) / abs(v1.z);
+        float gamma = (1 - alpha - beta) / abs(v2.z);
+        uint32_t c = modelTextureMapper(alpha, beta, gamma, closestIntersection.intersectedTriangle, Logo);
+        colour.blue = int((c) & 0xff);
+        colour.green = int((c >> 8) & 0xff);
+        colour.red = int((c >> 16) & 0xff);
     }
 
     // Calculate brightness
@@ -982,44 +1103,50 @@ Colour castRay(glm::vec3 cameraPosition, glm::vec3 lightPosition, glm::vec3 rayD
     float red = std::min((float(colour.red) * brightness), 255.0f);
     float green = std::min((float(colour.green) * brightness), 255.0f);
     float blue = std::min((float(colour.blue) * brightness), 255.0f);
-    if(shadowType == HARD) {
-        if(closestIntersection.triangleIndex != lightIntersection.triangleIndex && closestIntersection.intersectedTriangle.colour.name != "Yellow") {
-            if(index <= 2) {
-                // Hard shadow
-                red = red * ambient;
-                green = green * ambient;
-                blue = blue * ambient;
-            } else {
-                red = red * 0.7f;
-                green = green * 0.7f;
-                blue = blue * 0.7f;
+    if(shadowType==HARD) {
+        if(closestIntersection.triangleIndex != lightIntersection.triangleIndex && closestIntersection.intersectedTriangle.colour.name != "Yellow" && closestIntersection.intersectedTriangle.colour.name != "Orange") {
+            if(lightIntersection.intersectedTriangle.colour.name == "Red") {
+                ambient = 0.7;
             }
 
+            red = red * ambient;
+            green = green * ambient;
+            blue = blue * ambient;
+
+
         }
-    } else if (shadowType == SOFT){
+    } else if (shadowType==SOFT){
         // Soft shadow
-        if (closestIntersection.triangleIndex != lightIntersection.triangleIndex) {
-            std::vector<glm::vec3> lightPositions = multiLightPosition(lightPosition);
+        if (closestIntersection.triangleIndex != lightIntersection.triangleIndex && closestIntersection.intersectedTriangle.colour.name != "Yellow" && closestIntersection.intersectedTriangle.colour.name != "Orange") {
             float number = 0.0f;
             for(glm::vec3 i : lightPositions) {
                 glm::vec3 direction = glm::normalize(closestIntersection.intersectionPoint - i);
-                RayTriangleIntersection intersection = getClosestIntersection(lightPosition, direction, modelTriangles);
-                if(intersection.triangleIndex == closestIntersection.triangleIndex) {
+                RayTriangleIntersection intersection = getClosestIntersection(i, direction, modelTriangles);
+                if(intersection.triangleIndex == closestIntersection.triangleIndex || intersection.intersectedTriangle.colour.name == "Red") {
                     number = number + 1.0f;
                 }
             }
             auto shadowValue = glm::clamp<float>((number/float(lightPositions.size()) + ambient), 0, 1);
+//            auto shadowValue = glm::clamp<float>(1.3f/ambient *(number/float(lightPositions.size()) ), 0, 1);
+
+            if(lightIntersection.intersectedTriangle.colour.name == "Red") {
+                shadowValue = 0.8;
+            }
+
             red = red * shadowValue;
             green = green  * shadowValue;
             blue = blue * shadowValue;
+
         }
     } else {
-        return {int(round(red)), int(round(green)), int(round(blue))};
+        return {int(red), int(green), int(blue)};
     }
-    return {int(round(red)), int(round(green)), int(round(blue))};
+    return {int(red), int(green), int(blue)};
 }
 
 void rayTrace(DrawingWindow &window, const std::vector<ModelTriangle>& modelTriangles, glm::vec3 cameraPosition, glm::mat3 cameraOrientation, glm::vec3 lightPosition, float focalLength, float scalingFactor, float lightPower, float ambient, const TextureMap& textureMap, shadow shadowType, shading shadeType) {
+    // std::vector<glm::vec3> lightPositions = multiLightPosition(lightPosition);
+    std::vector<glm::vec3> lightPositions = multiLightPosition(lightPosition);
     for(int y = 0; y < HEIGHT; y++) {
         for(int x = 0; x < WIDTH; x++) {
             // Convert pixel to 3D coordinate
@@ -1035,7 +1162,7 @@ void rayTrace(DrawingWindow &window, const std::vector<ModelTriangle>& modelTria
                 window.setPixelColour(x, y, c);
                 continue;
             }
-            Colour colour = castRay(cameraPosition, lightPosition, rayDirection, modelTriangles, lightPower, ambient, textureMap, 1, shadowType, shadeType);
+            Colour colour = castRay(cameraPosition, lightPosition, lightPositions, rayDirection, modelTriangles, lightPower, ambient, textureMap, 1, shadowType, shadeType);
             int red = colour.red;
             int blue = colour.blue;
             int green = colour.green;
@@ -1273,7 +1400,7 @@ void drawSphereWithPhoneShading(DrawingWindow &window, const std::vector<ModelTr
 
 // ---------------------- Setting ---------------------- //
 glm::vec3 cameraPosition (0.0, 0.0, 4.0);
-glm::vec3 lightPosition (0.0, 0.6, 0.3);
+glm::vec3 lightPosition (0.0, 0.5, 0.0);
 glm::mat3 cameraOrientation (1, 0, 0, 0, 1, 0, 0, 0, 1);
 float lightPower = 4.0f;
 float ambient = 0.4;
@@ -1285,8 +1412,8 @@ shadow shadowType = HARD;
 shading shadeType = FLAT;
 
 // ---------------------- Box Model ---------------------- //
-std::vector<std::string> objFileName {"textured-cornell-box.obj", "sphere.obj"};
-std::vector<std::string> mtlFileName {"textured-cornell-box.mtl", "null"};
+std::vector<std::string> objFileName {"textured-cornell-box.obj", "sphere.obj", "logo.obj"};
+std::vector<std::string> mtlFileName {"textured-cornell-box.mtl", "null", "null"};
 std::vector<ModelTriangle> modelTriangles = objReader2(objFileName, mtlFileName, 0.35);
 TextureMap textureMap = getTextureMap("chessboard.ppm");
 
@@ -1746,7 +1873,6 @@ void handleEvent(SDL_Event event, DrawingWindow &window) {
 
 int main(int argc, char *argv[]) {
     clearDepthBuffer();
-    multiLightPosition(lightPosition);
     // week 1
      // Single Element Numerical Interpolation
 //     std::vector<float> result;
