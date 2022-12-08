@@ -255,6 +255,16 @@ uint32_t textureMapper(CanvasTriangle triangle, CanvasPoint point, TextureMap te
     return colour;
 }
 
+uint32_t sphereTextureMapper(glm::vec3 spherePoint, TextureMap Venus) {
+    float phi = atan2(spherePoint.z, spherePoint.x);
+    float theta = asin(spherePoint.y);
+    float x = 1.0f - ((phi+PI) / (2*PI));
+    float y = (theta + PI/2) / PI;
+    int i = std::max(std::min(int((x * float(Venus.width))-1), int(Venus.width-1)), 0);
+    int j = std::max(std::min((int((1-y) * float(Venus.height) - 0.001f)), int(Venus.height-1)), 0);
+    return Venus.pixels[i + j * int(Venus.width)];
+}
+
 uint32_t modelTextureMapper(float alpha, float beta, float gamma, ModelTriangle triangle, TextureMap textureMap){
     // Get texture point
     CanvasPoint texturePoint(round(alpha * triangle.texturePoints[0].x * float(textureMap.width) + beta * triangle.texturePoints[1].x * float(textureMap.width) + gamma * triangle.texturePoints[2].x * float(textureMap.width)), round(alpha * triangle.texturePoints[0].y * float(textureMap.height) + beta * triangle.texturePoints[1].y * float(textureMap.height) + gamma * triangle.texturePoints[2].y * float(textureMap.height)));
@@ -346,8 +356,20 @@ void drawTextureTriangle(DrawingWindow &window, const TextureMap& textureMap, Ca
 }
 
 // ---------------------- Week 4 ---------------------- //
-glm::vec3 get_xyz(double x1,double y1,double z1,double x2,double y2,double z2,double x3,double y3,double z3,double x4,double y4,double z4){
+glm::vec3 getSphereCenter(glm::vec3 v1, glm::vec3 v2, glm::vec3 v3, glm::vec3 v4){
     double x, y, z;
+    double x1 = v1.x;
+    double y1 = v1.y;
+    double z1 = v1.z;
+    double x2 = v2.x;
+    double y2 = v2.y;
+    double z2 = v2.z;
+    double x3 = v3.x;
+    double y3 = v3.y;
+    double z3 = v3.z;
+    double x4 = v4.x;
+    double y4 = v4.y;
+    double z4 = v4.z;
     double a11,a12,a13,a21,a22,a23,a31,a32,a33,b1,b2,b3,d,d1,d2,d3;
     a11=2*(x2-x1); a12=2*(y2-y1); a13=2*(z2-z1);
     a21=2*(x3-x2); a22=2*(y3-y2); a23=2*(z3-z2);
@@ -482,8 +504,7 @@ std::vector<ModelTriangle> objReader(const std::string& objFile, const std::stri
 
 glm::vec3 sphereCenter (0, 0, 0);
 float rotateDegree = 0.0f;
-float translateSphere = 0.0f;
-TextureMap Lunar = TextureMap("Venus.ppm");
+TextureMap Venus = TextureMap("Venus.ppm");
 TextureMap Logo = TextureMap("texture_cw.ppm");
 float sphereRadius = 0;
 
@@ -591,7 +612,7 @@ std::vector<ModelTriangle> objReader2(const std::vector<std::string>& objFiles, 
         }
     }
     // calculate sphere sphereCenter and radius
-    sphereCenter = get_xyz(sphereVertex[3].x, sphereVertex[3].y, sphereVertex[3].z, sphereVertex[10].x, sphereVertex[10].y, sphereVertex[10].z, sphereVertex[20].x, sphereVertex[20].y, sphereVertex[20].z, sphereVertex[30].x, sphereVertex[30].y, sphereVertex[30].z);
+    sphereCenter = getSphereCenter(sphereVertex[3], sphereVertex[10], sphereVertex[20], sphereVertex[30]);
     sphereRadius = calculateRadius(sphereVertex[0], sphereCenter);
     return modelTriangles;
 }
@@ -724,6 +745,7 @@ glm::mat3 lookAt(glm::vec3 cameraPosition) {
 }
 
 // ---------------------- Week 6 ---------------------- //
+// Square
 //std::vector<glm::vec3> multiLightPosition(glm::vec3 sphereCenter) {
 //    std::vector<glm::vec3> lightPositions;
 //    float i = -0.2f;
@@ -740,6 +762,7 @@ glm::mat3 lookAt(glm::vec3 cameraPosition) {
 //    return lightPositions;
 //}
 //
+// circle
 std::vector<glm::vec3> multiLightPosition(glm::vec3 lightCenterPoint) {
     int radius = 10;
     float spread = 0.05;
@@ -886,6 +909,48 @@ float fresnel(glm::vec3 incident, glm::vec3 normal, float refractiveIndex) {
     }
 }
 
+float CalculateBumpMap(RayTriangleIntersection closestIntersection, const Colour& colour, glm::vec3 lightPosition, glm::vec3 cameraPosition,  float ambient, float power) {
+    std::array<TexturePoint, 3> triangleTexturePoints = closestIntersection.intersectedTriangle.texturePoints;
+    glm::vec3 v0 = closestIntersection.intersectedTriangle.vertices[0];
+    glm::vec3 v1 = closestIntersection.intersectedTriangle.vertices[1];
+    glm::vec3 v2 = closestIntersection.intersectedTriangle.vertices[2];
+    glm::vec2 textureA = glm::vec2(triangleTexturePoints[0].x, triangleTexturePoints[0].y);
+    glm::vec2 textureB = glm::vec2(triangleTexturePoints[1].x, triangleTexturePoints[1].y);
+    glm::vec2 textureC = glm::vec2(triangleTexturePoints[2].x, triangleTexturePoints[2].y);
+    glm::vec3 normal = closestIntersection.intersectedTriangle.normal;
+    //std::cout << glm::to_string(normal) << std::endl;
+
+    glm::vec3 deltaPos1 = v1 - v0;
+    glm::vec3 deltaPos2 = v2 - v0;
+    glm::vec2 deltaUV1 = textureB - textureA;
+    glm::vec2 deltaUV2 = textureC - textureA;
+
+    float r = 1.0f / (deltaUV1.x * deltaUV2.y - deltaUV1.y * deltaUV2.x);
+    glm::vec3 tangent = (deltaPos1 * deltaUV2.y   - deltaPos2 * deltaUV1.y)*r;
+    tangent = glm::normalize(tangent - (glm::dot(tangent, normal) * normal));
+    glm::vec3 bitangent = (deltaPos2 * deltaUV1.x   - deltaPos1 * deltaUV2.x)*r;
+    bitangent = glm::normalize(bitangent - (glm::dot(bitangent, normal) * normal) - (glm::dot(bitangent, tangent) * tangent));
+    normal = glm::normalize(normal);
+    glm::mat3x3 tangentMatrix = {tangent, bitangent, normal};
+    //std::cout << glm::to_string(tangentMatrix) << std::endl;
+
+    //float pointGray = c.red * 0.3 + c.green * 0.59 + c.blue * 0.11;
+    glm::vec3 pNormal = glm::vec3(colour.red / (float)255, colour.green / (float)255, colour.blue / (float)255);
+    glm::vec3 tNormal = 2.0f * pNormal - 1.0f;
+    glm::vec3 worldNormal = tNormal * tangentMatrix;
+    //std::cout << glm::to_string(worldNormal) << std::endl;
+
+    glm::vec3 lightDirection = glm::normalize(closestIntersection.intersectionPoint - lightPosition);
+    float lightDistance = glm::length(lightPosition - closestIntersection.intersectionPoint);
+    float PL = power / float((4 * PI * lightDistance * lightDistance));
+    float lightAngle = glm::dot(worldNormal, lightDirection);
+    lightAngle = glm::clamp<float>(lightAngle, 0.0, 1.0);
+    glm::vec3 view = glm::normalize(closestIntersection.intersectionPoint - cameraPosition);
+    glm::vec3 reflection = lightDirection - 2.0f * (worldNormal * glm::dot(lightDirection,worldNormal));
+    float specularLight = glm::pow(fmax(0.0f, glm::dot(view, reflection)), 256.0f);
+    return (PL * lightAngle + specularLight + ambient);
+}
+
 Colour castRay(glm::vec3 cameraPosition, glm::vec3 lightPosition, const std::vector<glm::vec3>& lightPositions, glm::vec3 rayDirection, const std::vector<ModelTriangle>& modelTriangles, float lightPower, float ambient, const TextureMap& textureMap, int index, shadow shadowType, shading shadeType) {
     if(index >= 5) {
         return {255, 255, 255};
@@ -957,15 +1022,8 @@ Colour castRay(glm::vec3 cameraPosition, glm::vec3 lightPosition, const std::vec
         glm::vec3 pointTranslate = intersectionPoint - sphereCenter;
         pointTranslate = rotationYMatrix * pointTranslate;
         intersectionPoint = pointTranslate + sphereCenter;
-
         glm::vec3 spherePoint = (intersectionPoint - sphereCenter) / sphereRadius;
-        float phi = atan2(spherePoint.z, spherePoint.x);
-        float theta = asin(spherePoint.y);
-        float x = 1.0f - ((phi+PI) / (2*PI));
-        float y = (theta + PI/2) / PI;
-        int i = std::max(std::min(int((x * float(Lunar.width))-1), int(Lunar.width-1)), 0);
-        int j = std::max(std::min((int((1-y) * float(Lunar.height) - 0.001f)), int(Lunar.height-1)), 0);
-        uint32_t c = Lunar.pixels[i + j * int(Lunar.width)];
+        uint32_t c = sphereTextureMapper(spherePoint, Venus);
         colour.blue = int((c) & 0xff);
         colour.green = int((c >> 8) & 0xff);
         colour.red = int((c >> 16) & 0xff);
@@ -980,45 +1038,7 @@ Colour castRay(glm::vec3 cameraPosition, glm::vec3 lightPosition, const std::vec
         colour.blue = int((c) & 0xff);
         colour.green = int((c >> 8) & 0xff);
         colour.red = int((c >> 16) & 0xff);
-        std::array<TexturePoint, 3> triangleTexturePoints = closestIntersection.intersectedTriangle.texturePoints;
-        glm::vec3 A = closestIntersection.intersectedTriangle.vertices[0];
-        glm::vec3 B = closestIntersection.intersectedTriangle.vertices[1] + 0.0001f;
-        glm::vec3 C = closestIntersection.intersectedTriangle.vertices[2] + 0.0001f;
-        glm::vec2 textureA = glm::vec2(triangleTexturePoints[0].x, triangleTexturePoints[0].y);
-        glm::vec2 textureB = glm::vec2(triangleTexturePoints[1].x, triangleTexturePoints[1].y);
-        glm::vec2 textureC = glm::vec2(triangleTexturePoints[2].x, triangleTexturePoints[2].y);
-        glm::vec3 normal = closestIntersection.intersectedTriangle.normal;
-        //std::cout << glm::to_string(normal) << std::endl;
-
-        glm::vec3 deltaPos1 = B - A;
-        glm::vec3 deltaPos2 = C - A;
-        glm::vec2 deltaUV1 = textureB - textureA;
-        glm::vec2 deltaUV2 = textureC - textureA;
-
-        float r = 1.0f / (deltaUV1.x * deltaUV2.y - deltaUV1.y * deltaUV2.x);
-        glm::vec3 tangent = (deltaPos1 * deltaUV2.y   - deltaPos2 * deltaUV1.y)*r;
-        tangent = glm::normalize(tangent - (glm::dot(tangent, normal) * normal));
-        glm::vec3 bitangent = (deltaPos2 * deltaUV1.x   - deltaPos1 * deltaUV2.x)*r;
-        bitangent = glm::normalize(bitangent - (glm::dot(bitangent, normal) * normal) - (glm::dot(bitangent, tangent) * tangent));
-        normal = glm::normalize(normal);
-        glm::mat3x3 tangentMatrix = {tangent, bitangent, normal};
-        //std::cout << glm::to_string(tangentMatrix) << std::endl;
-
-        //float pointGray = c.red * 0.3 + c.green * 0.59 + c.blue * 0.11;
-        glm::vec3 pixelNormal = glm::vec3(colour.red/(float)255, colour.green/(float)255, colour.blue/(float)255);
-        glm::vec3 textureNormal = 2.0f * pixelNormal - 1.0f;
-        glm::vec3 worldNormal = textureNormal * tangentMatrix;
-        //std::cout << glm::to_string(worldNormal) << std::endl;
-
-
-        float lightDistance = glm::length(lightPosition - closestIntersection.intersectionPoint);
-        float PL = 16 / float((4 * PI * lightDistance * lightDistance));
-        float lightAngle = glm::dot(worldNormal, lightDirection);
-        lightAngle = glm::clamp<float>(lightAngle, 0.0, 1.0);
-        view = glm::normalize(closestIntersection.intersectionPoint - cameraPosition);
-        glm::vec3 reflection = lightDirection - 2.0f * (worldNormal * glm::dot(lightDirection,worldNormal));
-        float specularLight = glm::pow(fmax(0.0f, glm::dot(view, reflection)), 256);
-        brightness = (PL * lightAngle + specularLight + ambient);
+        brightness = CalculateBumpMap(closestIntersection, colour, lightPosition, cameraPosition, ambient, lightPower);
     }
 
     if(shadeType == GOURAND || shadeType == PHONG || closestIntersection.intersectedTriangle.colour.name == "Orange") {
@@ -1183,18 +1203,9 @@ Colour castRay(glm::vec3 cameraPosition, glm::vec3 lightPosition, const std::vec
     return {int(red), int(green), int(blue)};
 }
 
-void rayTrace(DrawingWindow &window, std::vector<ModelTriangle> modelTriangles, glm::vec3 cameraPosition, glm::mat3 cameraOrientation, glm::vec3 lightPosition, float focalLength, float scalingFactor, float lightPower, float ambient, const TextureMap& textureMap, shadow shadowType, shading shadeType) {
+void rayTrace(DrawingWindow &window, const std::vector<ModelTriangle>& modelTriangles, glm::vec3 cameraPosition, glm::mat3 cameraOrientation, glm::vec3 lightPosition, float focalLength, float scalingFactor, float lightPower, float ambient, const TextureMap& textureMap, shadow shadowType, shading shadeType) {
     std::vector<glm::vec3> lightPositions = multiLightPosition(lightPosition);
     rotateDegree = rotateDegree + 15.0f;
-//    translateSphere = translateSphere + 0.1f;
-//    for(auto & modelTriangle : modelTriangles) {
-//        if(modelTriangle.colour.name == "Orange") {
-//            for (int j = 0; j < 3; j++) {
-//                modelTriangle.vertices[j].x = modelTriangle.vertices[j].x + translateSphere;
-//            }
-//        }
-//    }
-//    sphereCenter.x = sphereCenter.x + translateSphere;
     for(int y = 0; y < HEIGHT; y++) {
         for(int x = 0; x < WIDTH; x++) {
             // Convert pixel to 3D coordinate
