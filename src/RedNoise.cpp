@@ -36,16 +36,16 @@ void clearDepthBuffer(){
 
 // ---------------------- Week 1 ---------------------- //
 void draw(DrawingWindow &window) {
-	window.clearPixels();
-	for (size_t y = 0; y < window.height; y++) {
-		for (size_t x = 0; x < window.width; x++) {
-			float red = rand() % 256;
-			float green = 0.0;
-			float blue = 0.0;
-			uint32_t colour = (255 << 24) + (int(red) << 16) + (int(green) << 8) + int(blue);
-			window.setPixelColour(x, y, colour);
-		}
-	}
+    window.clearPixels();
+    for (size_t y = 0; y < window.height; y++) {
+        for (size_t x = 0; x < window.width; x++) {
+            float red = rand() % 256;
+            float green = 0.0;
+            float blue = 0.0;
+            uint32_t colour = (255 << 24) + (int(red) << 16) + (int(green) << 8) + int(blue);
+            window.setPixelColour(x, y, colour);
+        }
+    }
 }
 
 // ---------------------- Week 2 ---------------------- //
@@ -255,14 +255,22 @@ uint32_t textureMapper(CanvasTriangle triangle, CanvasPoint point, TextureMap te
     return colour;
 }
 
-uint32_t sphereTextureMapper(glm::vec3 spherePoint, TextureMap Venus) {
-    float phi = atan2(spherePoint.z, spherePoint.x);
-    float theta = asin(spherePoint.y);
-    float x = 1.0f - ((phi+PI) / (2*PI));
-    float y = (theta + PI/2) / PI;
-    int i = std::max(std::min(int((x * float(Venus.width))-1), int(Venus.width-1)), 0);
-    int j = std::max(std::min((int((1-y) * float(Venus.height) - 0.001f)), int(Venus.height-1)), 0);
-    return Venus.pixels[i + j * int(Venus.width)];
+// Match the sphere point in texture map
+// Sphere map
+//    float x = 1.0f - ((phi+PI) / (2*PI));
+//    float y = (theta + PI/2) / PI;
+//    int i = std::max(std::min(int((x * float(Venus.width))-1), int(Venus.width-1)), 0);
+//    int j = std::max(std::min((int((1-y) * float(Venus.height) - 0.001f)), int(Venus.height-1)), 0);
+Colour sphereTextureMapper(float sphereRadius, glm::vec3 spherePoint, TextureMap Venus) {
+    // Sphere coordinate
+    // https://zhuanlan.zhihu.com/p/70414617
+    float phi = atan2(spherePoint.y, spherePoint.x);
+    float theta = acos(spherePoint.z);
+    int i = phi/(2*PI)*(Venus.width);
+    int j = theta/(PI)*(Venus.height);
+    uint32_t c = Venus.pixels[i + j * int(Venus.width)];
+    Colour colour = Colour(int((c >> 16) & 0xff), int((c >> 8) & 0xff), int((c) & 0xff));
+    return colour;
 }
 
 uint32_t modelTextureMapper(float alpha, float beta, float gamma, ModelTriangle triangle, TextureMap textureMap){
@@ -357,40 +365,20 @@ void drawTextureTriangle(DrawingWindow &window, const TextureMap& textureMap, Ca
 
 // ---------------------- Week 4 ---------------------- //
 glm::vec3 getSphereCenter(glm::vec3 v1, glm::vec3 v2, glm::vec3 v3, glm::vec3 v4){
-    double x, y, z;
-    double x1 = v1.x;
-    double y1 = v1.y;
-    double z1 = v1.z;
-    double x2 = v2.x;
-    double y2 = v2.y;
-    double z2 = v2.z;
-    double x3 = v3.x;
-    double y3 = v3.y;
-    double z3 = v3.z;
-    double x4 = v4.x;
-    double y4 = v4.y;
-    double z4 = v4.z;
-    double a11,a12,a13,a21,a22,a23,a31,a32,a33,b1,b2,b3,d,d1,d2,d3;
-    a11=2*(x2-x1); a12=2*(y2-y1); a13=2*(z2-z1);
-    a21=2*(x3-x2); a22=2*(y3-y2); a23=2*(z3-z2);
-    a31=2*(x4-x3); a32=2*(y4-y3); a33=2*(z4-z3);
-    b1=x2*x2-x1*x1+y2*y2-y1*y1+z2*z2-z1*z1;
-    b2=x3*x3-x2*x2+y3*y3-y2*y2+z3*z3-z2*z2;
-    b3=x4*x4-x3*x3+y4*y4-y3*y3+z4*z4-z3*z3;
-    d=a11*a22*a33+a12*a23*a31+a13*a21*a32-a11*a23*a32-a12*a21*a33-a13*a22*a31;
-    d1=b1*a22*a33+a12*a23*b3+a13*b2*a32-b1*a23*a32-a12*b2*a33-a13*a22*b3;
-    d2=a11*b2*a33+b1*a23*a31+a13*a21*b3-a11*a23*b3-b1*a21*a33-a13*b2*a31;
-    d3=a11*a22*b3+a12*b2*a31+b1*a21*a32-a11*b2*a32-a12*a21*b3-b1*a22*a31;
-    x=d1/d;
-    y=d2/d;
-    z=d3/d;
-    return {x, y, z};
+    double b1,b2,b3,d,d1,d2,d3;
+    glm::mat3 mat = {2*(v2.x-v1.x), 2*(v2.y-v1.y), 2*(v2.z-v1.z),2*(v3.x-v2.x), 2*(v3.y-v2.y), 2*(v3.z-v2.z),2*(v4.x-v3.x), 2*(v4.y-v3.y), 2*(v4.z-v3.z)};
+    b1=v2.x*v2.x-v1.x*v1.x+v2.y*v2.y-v1.y*v1.y+v2.z*v2.z-v1.z*v1.z;
+    b2=v3.x*v3.x-v2.x*v2.x+v3.y*v3.y-v2.y*v2.y+v3.z*v3.z-v2.z*v2.z;
+    b3=v4.x*v4.x-v3.x*v3.x+v4.y*v4.y-v3.y*v3.y+v4.z*v4.z-v3.z*v3.z;
+    d=double(mat[0][0]*mat[1][1]*mat[2][2]+mat[0][1]*mat[1][2]*mat[2][0]+mat[0][2]*mat[1][0]*mat[2][1]-mat[0][0]*mat[1][2]*mat[2][1]-mat[0][1]*mat[1][0]*mat[2][2]-mat[0][2]*mat[1][1]*mat[2][0]);
+    d1=b1*double(mat[1][1]*mat[2][2])+double(mat[0][1]*mat[1][2])*b3+double(mat[0][2])*b2*double(mat[2][1])-b1*double(mat[1][2]*mat[2][1])-double(mat[0][1])*b2*double(mat[2][2])-double(mat[0][2]*mat[1][1])*b3;
+    d2=double(mat[0][0])*b2*double(mat[2][2])+b1*double(mat[1][2]*mat[2][0])+double(mat[0][2]*mat[1][0])*b3-double(mat[0][0]*mat[1][2])*b3-b1*double(mat[1][0]*mat[2][2])-double(mat[0][2])*b2*double(mat[2][0]);
+    d3=double(mat[0][0])*double(mat[1][1])*b3+double(mat[0][1])*b2*double(mat[2][0])+b1*double(mat[1][0]*mat[2][1])-double(mat[0][0])*b2*double(mat[2][1])-double(mat[0][1]*mat[1][0])*b3-b1*double(mat[1][1]*mat[2][0]);
+    return {d1/d, d2/d, d3/d};
 }
 
-
-
 float calculateRadius(glm::vec3 p1, glm::vec3 centre){
-    return glm::distance(p1, centre);
+    return sqrt((p1[0]-centre[0])*(p1[0]-centre[0]) + (p1[1]-centre[1])*(p1[1]-centre[1]) + (p1[2]-centre[2])*(p1[2]-centre[2]));
 }
 
 // Convert mtl colours to packed integer colours
@@ -438,11 +426,11 @@ std::vector<ModelTriangle> objReader(const std::string& objFile, const std::stri
         // get colour
         if(text[0] == "usemtl") {
             colourName = text[1];
-        // get vertex coordinates
+            // get vertex coordinates
         } else if(text[0] == "v") {
             glm::vec3 v = glm::vec3(std::stod(text[1]), std::stod(text[2]), std::stod(text[3]));
             vertex.push_back(v);
-        // get triangle facets
+            // get triangle facets
         } else if(text[0] == "vt"){
             std::cout << text[3] <<std::endl;
             TexturePoint vt = TexturePoint(std::stof(text[1]), std::stof(text[2]));
@@ -613,7 +601,9 @@ std::vector<ModelTriangle> objReader2(const std::vector<std::string>& objFiles, 
     }
     // calculate sphere sphereCenter and radius
     sphereCenter = getSphereCenter(sphereVertex[3], sphereVertex[10], sphereVertex[20], sphereVertex[30]);
+    std::cout << sphereCenter.x << " " << sphereCenter.y << " " << sphereCenter.z << std::endl;
     sphereRadius = calculateRadius(sphereVertex[0], sphereCenter);
+    std::cout << sphereRadius << std::endl;
     return modelTriangles;
 }
 
@@ -690,7 +680,7 @@ glm::vec3 moveCamera(SDL_Event event, glm::vec3 cameraPosition) {
             newCameraPosition.z -= movement;
         } else if (event.key.keysym.sym == SDLK_b) {
             newCameraPosition.z += movement;
-        // Rotate
+            // Rotate
         } else if (event.key.keysym.sym == SDLK_d) {
             glm::mat3 rotation = glm::mat3(cos(theta), 0, -sin(theta), 0, 1, 0, sin(theta), 0, cos(theta));
             newCameraPosition = rotation * cameraPosition;
@@ -850,113 +840,95 @@ glm::vec3 vertexNormalCalculator(glm::vec3 vertex, const std::vector<ModelTriang
     return glm::normalize(vertexNormal);
 }
 
-glm::vec3 getRefractionDirection(float air, float glass, glm::vec3 incidenceRay, glm::vec3 normal) {
-    glm::vec3 direction (0, 0, 0);
-    auto incidenceAngle = glm::dot(incidenceRay, normal);
-    float eta = 0.0f;
-    float k = 0.0f;
-    if(incidenceAngle > 0) {
-        eta = air / glass;
+glm::vec3 getRefractionDirection(glm::vec3 incidentRay, glm::vec3 normal, float air, float glass) {
+    float incidentAngle = dot(incidentRay, normal);
+    float eta = air / glass;
+    if (incidentAngle > 0){
+        eta = 1 / eta;
         normal = -normal;
-    } else {
+    }
+    float k = 1 - eta * eta * (1 - abs(incidentAngle) * abs(incidentAngle));
+    if (k < 0) return {0,0,0};
+    return glm::normalize(incidentRay * eta + normal * (eta * abs(incidentAngle) - sqrtf(k)));
+}
+
+float refractiveIndex(glm::vec3 incidentRay, glm::vec3 normal, float air, float glass) {
+    float incidentAngle = glm::dot(incidentRay, normal);
+    float eta = air / glass;
+    if (incidentAngle > 0){
         eta = glass / air;
     }
-    k = 1 - eta * eta * (1 - abs(incidenceAngle) * abs(incidenceAngle));
-    if(k < 0){
-        return direction;
-    }
-    direction = glm::normalize(incidenceRay*eta + normal * (eta * abs(incidenceAngle) - sqrt(k)));
-    return direction;
-}
-
-glm::vec4 refractionDirection(glm::vec3 incident, glm::vec3 normal, float refractiveIndex) {
-    float incidentAngle = dot(incident, normal);
-    float v1 = 1, v2 = refractiveIndex;
-    float c = v1 / v2;
-    if (incidentAngle > 0){
-        c = 1 / c;
-        normal = -normal;
-    }
-
-    float cosTheta = abs(incidentAngle);
-
-    float k = 1 - c * c * (1 - cosTheta * cosTheta);
-    if (k < 0) return {0,0,0,0};
-    glm::vec3 refracted = glm::normalize(incident * c + normal * (c * cosTheta - sqrtf(k)));
-
-    return {refracted[0], refracted[1], refracted[2], sign(incidentAngle)};
-}
-
-float fresnel(glm::vec3 incident, glm::vec3 normal, float refractiveIndex) {
-    float cosi = glm::dot(incident, normal);
-    float etai = 1;
-    float etat = refractiveIndex;
-
-    if (cosi > 0){
-        std::swap(etai, etat);
-    }
-    float eta = etai / etat;
-    float sint = eta * sqrtf(std::max(0.f, 1 - cosi * cosi));
-
-    if (sint >= 1){
-        return 1;
+    float angle = eta * sqrtf(std::max(0.f, 1 - incidentAngle * incidentAngle));
+    // No refraction
+    if (angle >= 1){
+        return 0;
     } else {
-        float cost = sqrtf(std::max(0.f, 1 - sint * sint));
-        cosi = fabsf(cosi);
-        float Rs = ((etat * cosi) - (etai * cost)) / ((etat * cosi) + (etai * cost));
-        float Rp = ((etai * cosi) - (etat * cost)) / ((etai * cosi) + (etat * cost));
-        return (Rs * Rs + Rp * Rp) * 0.5f;
+        // Calculate refraction index
+        float cost = sqrtf(std::max(0.f, 1 - angle * angle));
+        incidentAngle = fabsf(incidentAngle);
+        float Rs = ((glass * incidentAngle) - (glass * cost)) / ((air * incidentAngle) + (air * cost));
+        float Rp = ((air * incidentAngle) - (glass * cost)) / ((air * incidentAngle) + (glass * cost));
+        return 1 - ((glm::pow(Rs, 2.0f) + glm::pow(Rp,2.0f)) * 0.5f);
     }
 }
 
-float CalculateBumpMap(RayTriangleIntersection closestIntersection, const Colour& colour, glm::vec3 lightPosition, glm::vec3 cameraPosition,  float ambient, float power) {
-    std::array<TexturePoint, 3> triangleTexturePoints = closestIntersection.intersectedTriangle.texturePoints;
-    glm::vec3 v0 = closestIntersection.intersectedTriangle.vertices[0];
-    glm::vec3 v1 = closestIntersection.intersectedTriangle.vertices[1];
-    glm::vec3 v2 = closestIntersection.intersectedTriangle.vertices[2];
-    glm::vec2 textureA = glm::vec2(triangleTexturePoints[0].x, triangleTexturePoints[0].y);
-    glm::vec2 textureB = glm::vec2(triangleTexturePoints[1].x, triangleTexturePoints[1].y);
-    glm::vec2 textureC = glm::vec2(triangleTexturePoints[2].x, triangleTexturePoints[2].y);
-    glm::vec3 normal = closestIntersection.intersectedTriangle.normal;
-    //std::cout << glm::to_string(normal) << std::endl;
-
-    glm::vec3 deltaPos1 = v1 - v0;
-    glm::vec3 deltaPos2 = v2 - v0;
-    glm::vec2 deltaUV1 = textureB - textureA;
-    glm::vec2 deltaUV2 = textureC - textureA;
-
-    float r = 1.0f / (deltaUV1.x * deltaUV2.y - deltaUV1.y * deltaUV2.x);
-    glm::vec3 tangent = (deltaPos1 * deltaUV2.y   - deltaPos2 * deltaUV1.y)*r;
-    tangent = glm::normalize(tangent - (glm::dot(tangent, normal) * normal));
-    glm::vec3 bitangent = (deltaPos2 * deltaUV1.x   - deltaPos1 * deltaUV2.x)*r;
-    bitangent = glm::normalize(bitangent - (glm::dot(bitangent, normal) * normal) - (glm::dot(bitangent, tangent) * tangent));
-    normal = glm::normalize(normal);
-    glm::mat3x3 tangentMatrix = {tangent, bitangent, normal};
-    //std::cout << glm::to_string(tangentMatrix) << std::endl;
-
-    //float pointGray = c.red * 0.3 + c.green * 0.59 + c.blue * 0.11;
-    glm::vec3 pNormal = glm::vec3(colour.red / (float)255, colour.green / (float)255, colour.blue / (float)255);
-    glm::vec3 tNormal = 2.0f * pNormal - 1.0f;
-    glm::vec3 worldNormal = tNormal * tangentMatrix;
-    //std::cout << glm::to_string(worldNormal) << std::endl;
-
-    glm::vec3 lightDirection = glm::normalize(closestIntersection.intersectionPoint - lightPosition);
-    float lightDistance = glm::length(lightPosition - closestIntersection.intersectionPoint);
-    float PL = power / float((4 * PI * lightDistance * lightDistance));
-    float lightAngle = glm::dot(worldNormal, lightDirection);
-    lightAngle = glm::clamp<float>(lightAngle, 0.0, 1.0);
-    glm::vec3 view = glm::normalize(closestIntersection.intersectionPoint - cameraPosition);
-    glm::vec3 reflection = lightDirection - 2.0f * (worldNormal * glm::dot(lightDirection,worldNormal));
-    float specularLight = glm::pow(fmax(0.0f, glm::dot(view, reflection)), 256.0f);
-    return (PL * lightAngle + specularLight + ambient);
+glm::vec3 rotateSphere(float rotateAngle, glm::vec3 intersectionPoint, glm::vec3 center, float radius){
+    glm::mat3 rotationYMatrix = glm::mat3{{cos(rotateAngle),  0, sin(rotateAngle)},
+                                          {0,                 1, 0},
+                                          {-sin(rotateAngle), 0, cos(rotateAngle)}};
+//        glm::mat3 rotationXMatrix = glm::mat3{{1, 0, 0},
+//                                              {0,              cos(rotateAngle),             sin(rotateAngle)},
+//                                              {0, -sin(rotateAngle), cos(rotateAngle)}};
+//        glm::mat3 rotationZMatrix = glm::mat3{{cos(rotateAngle), -sin(rotateAngle), 0},
+//                                              {sin(rotateAngle),              cos(rotateAngle),         0},
+//                                              {0, 0, 1}};
+    glm::vec3 translate = intersectionPoint - center;
+    translate = rotationYMatrix * translate;
+    glm::vec3 newIntersectionPoint = translate + center;
+    return (newIntersectionPoint - center) / radius;
 }
 
+glm::vec3 CalculateBumpMap(RayTriangleIntersection closestIntersection, const Colour& colour, glm::vec3 lightPosition, glm::vec3 cameraPosition,  float ambient, float power, glm::vec3 lightDirection, glm::vec3 view, float lightDistance) {
+    // reference: https://yebd1h.smartapps.cn/pages/blog/index?blogId=7236403&__id__=1&_swebfr=1&_swebFromHost=baiduboxapp
+    glm::vec3 pointNormal = closestIntersection.intersectedTriangle.normal;
+    TexturePoint vt0 = closestIntersection.intersectedTriangle.texturePoints[0];
+    TexturePoint vt1 = closestIntersection.intersectedTriangle.texturePoints[1];
+    TexturePoint vt2 = closestIntersection.intersectedTriangle.texturePoints[2];
+
+    glm::vec3 P1 = closestIntersection.intersectedTriangle.vertices[1] - closestIntersection.intersectedTriangle.vertices[0];
+    glm::vec3 P2 = closestIntersection.intersectedTriangle.vertices[2] - closestIntersection.intersectedTriangle.vertices[0];
+    glm::vec2 delvt1 = {vt1.x - vt0.x, vt1.y - vt0.y};
+    glm::vec2 delvt2 = {vt2.x - vt0.x, vt2.y - vt0.y};
+
+    // Calculate tangent space
+    float d = 1.0f / (delvt1.x * delvt2.y - delvt1.y * delvt2.x);
+    glm::vec3 tangentLine = (P1 * delvt2.y - P2 * delvt1.y) * d;
+    tangentLine = glm::normalize(tangentLine - (glm::dot(tangentLine, pointNormal) * pointNormal));
+    glm::vec3 biTan = (P2 * delvt1.x - P1 * delvt2.x) * d;
+    biTan = glm::normalize(biTan - (glm::dot(biTan, pointNormal) * pointNormal) - (glm::dot(biTan, tangentLine) * tangentLine));
+    pointNormal = glm::normalize(pointNormal);
+    glm::mat3 mat = {tangentLine.x, tangentLine.y, tangentLine.z,
+                     biTan.x, biTan.y, biTan.z,
+                     pointNormal.x, pointNormal.y, pointNormal.z};
+
+    // Calculate the pixel pointNormal
+    glm::vec3 pNormal = glm::vec3(float(colour.red)/255.0f, float(colour.green)/255.0f, float(colour.blue)/255.0f);
+    // Calculate texture normal
+    glm::vec3 tNormal = 2.0f * pNormal - 1.0f;
+    // Calculate world normal
+    glm::vec3 wNormal = tNormal * mat;
+
+    return wNormal;
+}
+
+// This function will be called recursively
 Colour castRay(glm::vec3 cameraPosition, glm::vec3 lightPosition, const std::vector<glm::vec3>& lightPositions, glm::vec3 rayDirection, const std::vector<ModelTriangle>& modelTriangles, float lightPower, float ambient, const TextureMap& textureMap, int index, shadow shadowType, shading shadeType) {
     if(index >= 5) {
         return {255, 255, 255};
     }
     // Get the closest intersect model with ray
     RayTriangleIntersection closestIntersection = getClosestIntersection(cameraPosition, rayDirection, modelTriangles);
+    glm::vec3 triangleNormal = closestIntersection.intersectedTriangle.normal;
     glm::vec3 point = closestIntersection.intersectionPoint;
     glm::vec3 v0 = closestIntersection.intersectedTriangle.vertices[0];
     glm::vec3 v1 = closestIntersection.intersectedTriangle.vertices[1];
@@ -986,47 +958,26 @@ Colour castRay(glm::vec3 cameraPosition, glm::vec3 lightPosition, const std::vec
         colour.green = int((c >> 8) & 0xff);
         colour.red = int((c >> 16) & 0xff);
     } else if(closestIntersection.intersectedTriangle.colour.name == "Red") {
-        //glm::vec3 refractDirection = getRefractionDirection(1.0f, 1.3f, rayDirection, closestIntersection.intersectedTriangle.normal);
-        glm::vec4 refractionD = refractionDirection(rayDirection, closestIntersection.intersectedTriangle.normal, 1.3f);
-        glm::vec3 refractDirection (refractionD[0], refractionD[1], refractionD[2]);
-        glm::vec3 reflectionRay = glm::normalize(rayDirection - (2.0f * closestIntersection.intersectedTriangle.normal * glm::dot(rayDirection, closestIntersection.intersectedTriangle.normal)));
-        Colour reflectionColour = castRay(closestIntersection.intersectionPoint, lightPosition, lightPositions, reflectionRay, modelTriangles, lightPower, ambient, textureMap, index+1, shadowType, shadeType);
+        glm::vec3 refractionDirection = getRefractionDirection(rayDirection, closestIntersection.intersectedTriangle.normal, 1.0f, 1.3f);
+        glm::vec3 reflectionDirection = glm::normalize(rayDirection - (2.0f * closestIntersection.intersectedTriangle.normal * glm::dot(rayDirection, closestIntersection.intersectedTriangle.normal)));
+        Colour reflectionColour = castRay(closestIntersection.intersectionPoint, lightPosition, lightPositions, reflectionDirection, modelTriangles, lightPower, ambient, textureMap, index + 1, shadowType, shadeType);
         glm::vec3 updatePoint = closestIntersection.intersectionPoint;
-        if(refractionD[3] == -1){
+        if(sign(glm::dot(rayDirection, closestIntersection.intersectedTriangle.normal)) == -1){
             updatePoint = point - (closestIntersection.intersectedTriangle.normal * float(0.0001));
         } else {
             updatePoint = point + (closestIntersection.intersectedTriangle.normal * float(0.0001));
         }
-        Colour refractionColour = castRay(updatePoint, lightPosition, lightPositions, refractDirection, modelTriangles, lightPower, ambient, textureMap, index+1, shadowType, shadeType);
-        float reflectiveConstant = fresnel(rayDirection, closestIntersection.intersectedTriangle.normal, 1.3f);
-        float refractiveConstant = 1 - reflectiveConstant;
+        Colour refractionColour = castRay(updatePoint, lightPosition, lightPositions, refractionDirection, modelTriangles, lightPower, ambient, textureMap, index + 1, shadowType, shadeType);
+        float refractiveConstant = refractiveIndex(rayDirection, closestIntersection.intersectedTriangle.normal, 1.0f, 1.3f);
+        float reflectiveConstant = 1 - refractiveConstant;
 
-        Colour mixColour;
-        mixColour.red = int(reflectiveConstant * float(reflectionColour.red) + (refractiveConstant * float(refractionColour.red)));
-        mixColour.green = int(reflectiveConstant * float(reflectionColour.green) + (refractiveConstant * float(refractionColour.green)));
-        mixColour.blue = int(reflectiveConstant * float(reflectionColour.blue) + (refractiveConstant * float(refractionColour.blue)));
-        return mixColour;
+        colour.red = int(reflectiveConstant * float(reflectionColour.red) + (refractiveConstant * float(refractionColour.red)));
+        colour.green = int(reflectiveConstant * float(reflectionColour.green) + (refractiveConstant * float(refractionColour.green)));
+        colour.blue = int(reflectiveConstant * float(reflectionColour.blue) + (refractiveConstant * float(refractionColour.blue)));
+        return colour;
     } else if(closestIntersection.intersectedTriangle.colour.name == "Orange") {
-        //std::cout << sphereCenter.x << " " << sphereCenter.y << " " << sphereCenter.z << std::endl;
         float rotate = glm::radians(rotateDegree);
-        glm::mat3 rotationYMatrix = glm::mat3{{cos(rotate), 0, sin(rotate)},
-                                              {0,              1,             0},
-                                              {-sin(rotate), 0, cos(rotate)}};
-//        glm::mat3 rotationXMatrix = glm::mat3{{1, 0, 0},
-//                                              {0,              cos(rotate),             sin(rotate)},
-//                                              {0, -sin(rotate), cos(rotate)}};
-//        glm::mat3 rotationZMatrix = glm::mat3{{cos(rotate), -sin(rotate), 0},
-//                                              {sin(rotate),              cos(rotate),         0},
-//                                              {0, 0, 1}};
-        glm::vec3 intersectionPoint = closestIntersection.intersectionPoint;
-        glm::vec3 pointTranslate = intersectionPoint - sphereCenter;
-        pointTranslate = rotationYMatrix * pointTranslate;
-        intersectionPoint = pointTranslate + sphereCenter;
-        glm::vec3 spherePoint = (intersectionPoint - sphereCenter) / sphereRadius;
-        uint32_t c = sphereTextureMapper(spherePoint, Venus);
-        colour.blue = int((c) & 0xff);
-        colour.green = int((c >> 8) & 0xff);
-        colour.red = int((c >> 16) & 0xff);
+        colour = sphereTextureMapper(sphereRadius, rotateSphere(rotate, closestIntersection.intersectionPoint, sphereCenter, sphereRadius), Venus);
     } else if(closestIntersection.intersectedTriangle.colour.name == "Brown") {
         // 2D Texture
         float alpha = ((-(point.x - v1.x) * (v2.y - v1.y) + (point.y - v1.y) * (v2.x - v1.x)) /
@@ -1038,7 +989,6 @@ Colour castRay(glm::vec3 cameraPosition, glm::vec3 lightPosition, const std::vec
         colour.blue = int((c) & 0xff);
         colour.green = int((c >> 8) & 0xff);
         colour.red = int((c >> 16) & 0xff);
-        brightness = CalculateBumpMap(closestIntersection, colour, lightPosition, cameraPosition, ambient, lightPower);
     }
 
     if(shadeType == GOURAND || shadeType == PHONG || closestIntersection.intersectedTriangle.colour.name == "Orange") {
@@ -1137,24 +1087,30 @@ Colour castRay(glm::vec3 cameraPosition, glm::vec3 lightPosition, const std::vec
 
             brightness = pL + sL + ambient;
         }
-    } else if (closestIntersection.intersectedTriangle.colour.name != "Brown"){
+    } else {
         // Proximity Lighting
         glm::vec3 pointToLight = lightPosition - closestIntersection.intersectionPoint;
         float distance = glm::length(pointToLight);
         float pL = lightPower / (4 * PI * distance * distance);
+        if (closestIntersection.intersectedTriangle.colour.name == "Brown"){
+            triangleNormal = CalculateBumpMap(closestIntersection, colour, lightPosition, cameraPosition, ambient, lightPower, lightDirection, view, distance);
+        }
         // Angle of Incidence Lighting
         // If the angle is less than 0, the PL will be zero, which means there do not have proximity light in that point
-        float incidenceAngle = std::max(0.0f, glm::dot(lightDirection, closestIntersection.intersectedTriangle.normal));
+        float incidenceAngle = std::max(0.0f, glm::dot(lightDirection, triangleNormal));
         pL = pL * incidenceAngle;
 
         // Specular Lighting
         float glossy = 256;
-        glm::vec3 reflectionVector = lightDirection - (2.0f * closestIntersection.intersectedTriangle.normal * glm::dot(closestIntersection.intersectedTriangle.normal,lightDirection));
+        glm::vec3 reflectionVector = lightDirection - (2.0f * triangleNormal * glm::dot(triangleNormal,lightDirection));
         float sL = glm::pow(glm::dot(reflectionVector, view), glossy);
 
         // Calculate pixel brightness
         // Add all type of light
         brightness = pL + sL + ambient;
+        if (closestIntersection.intersectedTriangle.colour.name == "Brown"){
+            brightness = glm::clamp<float>(brightness, 0.0f, 1.0f);
+        }
     }
 
     // Using the brightness to multiply each RGB channel
@@ -1167,12 +1123,9 @@ Colour castRay(glm::vec3 cameraPosition, glm::vec3 lightPosition, const std::vec
             if(lightIntersection.intersectedTriangle.colour.name == "Red") {
                 ambient = glm::clamp<float>(ambient + 0.3f, 0, 1);
             }
-
             red = red * ambient;
             green = green * ambient;
             blue = blue * ambient;
-
-
         }
     } else if (shadowType==SOFT){
         // Soft shadow
@@ -1186,16 +1139,12 @@ Colour castRay(glm::vec3 cameraPosition, glm::vec3 lightPosition, const std::vec
                 }
             }
             auto shadowValue = glm::clamp<float>((number/float(lightPositions.size()) + ambient), 0, 1);
-//            auto shadowValue = glm::clamp<float>(1.3f/ambient *(number/float(lightPositions.size()) ), 0, 1);
-
             if(lightIntersection.intersectedTriangle.colour.name == "Red") {
                 shadowValue = glm::clamp<float>(2*ambient+0.1f, 0, 1);
             }
-
             red = red * shadowValue;
             green = green  * shadowValue;
             blue = blue * shadowValue;
-
         }
     } else {
         return {int(red), int(green), int(blue)};
@@ -1420,12 +1369,12 @@ void drawSphereWithPhoneShading(DrawingWindow &window, const std::vector<ModelTr
             float gamma = 1 - alpha - beta;
 
             // Interpolation for normal vector
-            glm::vec3 normal = alpha*vn0 + beta*vn1 + gamma*vn2;
+            glm::vec3 normal = glm::vec3(alpha*vn0 + beta*vn1 + gamma*vn2);
 
             // Proximity Lighting
             glm::vec3 pointToLight = lightPosition - closestIntersection.intersectionPoint;
             float distance = glm::length(pointToLight);
-            float pL = lightPower / (4 * PI * distance * distance);
+            float pL = 1 / (4 * PI * distance * distance);
             // Angle of Incidence Lighting
             float incidenceAngle = std::max(0.0f, glm::dot(lightDirection, normal));
             pL = pL * incidenceAngle;
@@ -1434,7 +1383,7 @@ void drawSphereWithPhoneShading(DrawingWindow &window, const std::vector<ModelTr
             float glossy = 256;
             glm::vec3 view = glm::normalize(closestIntersection.intersectionPoint - cameraPosition);
             glm::vec3 reflectionVector = lightDirection - (2.0f * normal * glm::dot(normal, lightDirection));
-            float sL = glm::pow(glm::dot(reflectionVector, view), glossy);
+            float sL = glm::pow( std::max(0.0f, glm::dot(reflectionVector, view)), glossy);
 
             // Calculate pixel brightness
             // Add all type of light
@@ -1470,7 +1419,7 @@ bool rasterisedRenderYes = false;
 int scene = 0;
 shadow shadowType = HARD;
 shading shadeType = FLAT;
-int num = 213;
+int num = 0;
 
 // ---------------------- Box Model ---------------------- //
 std::vector<std::string> objFileName {"textured-cornell-box.obj", "sphere.obj", "logo.obj"};
@@ -1483,8 +1432,8 @@ std::vector<ModelTriangle> sphereModel = objReader("sphere.obj", "null", 0.35);
 
 // ---------------------- Show in window ---------------------- //
 void handleEvent(SDL_Event event, DrawingWindow &window) {
-	if(event.type == SDL_KEYDOWN) {
-		if(event.key.keysym.sym == SDLK_LEFT) {
+    if(event.type == SDL_KEYDOWN) {
+        if(event.key.keysym.sym == SDLK_LEFT) {
             std::cout << "LEFT" << std::endl;
             window.clearPixels();
             clearDepthBuffer();
@@ -1667,7 +1616,7 @@ void handleEvent(SDL_Event event, DrawingWindow &window) {
             cameraPosition = glm::vec3(0.0, 0.7, 5.2);
             lightPosition = glm::vec3(-0.3, 1.0, 0.8);
             cameraOrientation = glm::mat3(1, 0, 0, 0, 1, 0, 0, 0, 1);
-            lightPower = 4.0f;
+            lightPower = 2.0f;
             ambient = 0.0;
             focalLength = 2.0;
             scene = 4;
@@ -1678,7 +1627,7 @@ void handleEvent(SDL_Event event, DrawingWindow &window) {
             cameraPosition = glm::vec3(0.0, 0.7, 5.2);
             lightPosition = glm::vec3(-0.3, 1.0, 0.8);
             cameraOrientation = glm::mat3(1, 0, 0, 0, 1, 0, 0, 0, 1);
-            lightPower = 4.0f;
+            lightPower = 2.0f;
             ambient = 0.4;
             focalLength = 2.0;
             scene = 5;
@@ -1689,7 +1638,7 @@ void handleEvent(SDL_Event event, DrawingWindow &window) {
             cameraPosition = glm::vec3(0.0, 0.7, 5.2);
             lightPosition = glm::vec3(-0.3, 1.0, 0.8);
             cameraOrientation = glm::mat3(1, 0, 0, 0, 1, 0, 0, 0, 1);
-            lightPower = 4.0f;
+            lightPower = 2.0f;
             ambient = 0.4;
             focalLength = 2.0;
             scene = 6;
@@ -1927,21 +1876,21 @@ void handleEvent(SDL_Event event, DrawingWindow &window) {
             orbitYes = false;
         }
     } else if (event.type == SDL_MOUSEBUTTONDOWN) {
-       std::string num_string = std::to_string(num);
-       std::string fileName = "image/output";
-       fileName.append(num_string);
-       fileName.append(".ppm");
-       window.savePPM(fileName);
-       std::cout << fileName << std::endl;
-       num ++;
-		// window.saveBMP("output.bmp");
-	}
+        std::string num_string = std::to_string(num);
+        std::string fileName = "image/output";
+        fileName.append(num_string);
+        fileName.append(".ppm");
+        window.savePPM(fileName);
+        std::cout << fileName << std::endl;
+        num ++;
+        // window.saveBMP("output.bmp");
+    }
 }
 
 int main(int argc, char *argv[]) {
     clearDepthBuffer();
     // week 1
-     // Single Element Numerical Interpolation
+    // Single Element Numerical Interpolation
 //     std::vector<float> result;
 //     result = interpolateSingleFloats(2.2, 8.5, 7);
 //     for(float i : result) std::cout << i << " ";
@@ -1959,11 +1908,11 @@ int main(int argc, char *argv[]) {
 //    std::vector<ModelTriangle> modelTriangles = objReader("cornell-box.obj", "cornell-box.mtl", 1);
 //    for(const ModelTriangle& t : modelTriangles) {std::cout << t << t.colour << std::endl;}
 
-	DrawingWindow window = DrawingWindow(WIDTH, HEIGHT, false);
-	SDL_Event event;
-	while (true) {
-		// We MUST poll for events - otherwise the window will freeze !
-		if (window.pollForInputEvents(event)) handleEvent(event, window);
+    DrawingWindow window = DrawingWindow(WIDTH, HEIGHT, false);
+    SDL_Event event;
+    while (true) {
+        // We MUST poll for events - otherwise the window will freeze !
+        if (window.pollForInputEvents(event)) handleEvent(event, window);
         // week 1
 //        draw(window);
         // week 2
@@ -1983,7 +1932,7 @@ int main(int argc, char *argv[]) {
             }
             rasterisedRender(window, modelTriangles, cameraPosition, cameraOrientation, focalLength, float(HEIGHT)*2/3);
         }
-		// Need to render the frame at the end, or nothing actually gets shown on the screen !
-		window.renderFrame();
-	}
+        // Need to render the frame at the end, or nothing actually gets shown on the screen !
+        window.renderFrame();
+    }
 }
